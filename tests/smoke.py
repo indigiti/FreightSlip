@@ -64,6 +64,16 @@ with tempfile.TemporaryDirectory() as db:
         assert requests.get(base,params={'action':'preview','keys':','.join([g[0]['key']]*2)},timeout=2).status_code==422
         qrs=re.findall(r'<img class="lr-qr"[^>]*base64,([^"\s]+)',layout.text)
         assert len(qrs)==2 and qrs[0]!=qrs[1]
+        clean_params={'keys':','.join(j['keys']),'layout':'clean'}
+        clean=requests.get(base,params={'action':'preview',**clean_params},timeout=5)
+        assert clean.ok and 'data-layout="clean"' in clean.text and clean.text.count('Freight (Rs.)')==2
+        assert clean.text.count('<div class="sheet')==1 and clean.text.count('<div class="half clean')==2
+        assert all(clean.text.count(x['id'])==1 for x in g[:2])
+        assert re.findall(r'<img class="lr-qr"[^>]*base64,([^"\s]+)',clean.text)==qrs
+        single_clean=requests.get(base,params={'action':'preview',**clean_params,'keys':g[0]['key']},timeout=5)
+        assert single_clean.ok and single_clean.text.count('<div class="half clean')==1
+        assert requests.get(base,params={'action':'preview',**clean_params,'layout':'unknown'},timeout=5).status_code==422
+        if os.environ.get('LR_CLEAN_HTML'): Path(os.environ['LR_CLEAN_HTML']).write_text(clean.text)
         details=requests.get(base,params={'action':'details','key':g[0]['key']},timeout=2)
         assert details.ok and 'text/plain' in details.headers['Content-Type']
         assert 'OBD: 00010001' in details.text and 'Total freight (INR): 370.00' in details.text
@@ -81,6 +91,12 @@ with tempfile.TemporaryDirectory() as db:
             page=pages[0]
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
             assert all(gp['id'] in page.extract_text() for gp in g[:2])
+            clean_pdf=requests.get(base,params={'action':'pdf',**clean_params},timeout=30)
+            assert clean_pdf.ok and clean_pdf.content.startswith(b'%PDF'), clean_pdf.text[:500]
+            clean_pages=PdfReader(BytesIO(clean_pdf.content)).pages
+            assert len(clean_pages)==1
+            clean_text=clean_pages[0].extract_text()
+            assert 'Freight (Rs.)' in clean_text and all(clean_text.count(gp['id'])==1 for gp in g[:2])
         print('PHP smoke test passed: upload, validation, preview, atomic issuance, saved register, duplicate rejection.')
     finally:
         server.terminate();server.wait(timeout=5)

@@ -44,7 +44,9 @@ try {
       $isDraft=isset($_GET['review']);if($isDraft && ($action==='pdf'||count($keys)!==1))throw new InvalidArgumentException('Drafts can only be previewed one at a time.');
       $records=$isDraft?array_column(draft('review',$_GET['review'])['groups'],null,'key'):registry();$groups=[];
       foreach($keys as $key){if(!isset($records[$key])||($isDraft&&$records[$key]['status']!=='ready'))respond(['error'=>'Receipt not found or unavailable.'],404);$groups[]=$records[$key];}
-      $html=receiptHtml($groups,$isDraft);
+      $layout=$_GET['layout']??'classic';
+      if(!in_array($layout,['classic','clean'],true))throw new InvalidArgumentException('Select Classic or Print Clean.');
+      $html=receiptHtml($groups,$isDraft,$layout);
       if($action==='preview'){header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'");header('Content-Type: text/html; charset=utf-8');echo $html;exit;}
       vendor();$opts=new \Dompdf\Options();$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
     }

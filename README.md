@@ -62,3 +62,7 @@ DigiOps can check `/freightslip/` for dashboard availability. Separately check
 `/freightslip/api/index.php?action=health` for PHP extensions, private auth configuration,
 and writable storage. This health endpoint returns only a generic status. Verify the PDF and
 Excel flow with a non-sensitive test workbook before entering live dispatch data.
+
+### Print layout
+
+Use **Print layout → Print Clean** for a bolder LR number, product names in Particulars, and a single right-aligned freight column. **Classic** remains the default. The selection applies to draft and issued previews, individual PDFs, and batch PDFs. Both retain QR codes and pair different LR numbers on A4; an unpaired LR leaves the bottom slot blank.

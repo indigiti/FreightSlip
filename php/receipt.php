@@ -70,7 +70,10 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr):string {
   }
   return $html.'</div>';
 }
-function receiptHtml(array $groups,bool $draft=false):string {
+function receiptHtml(array $groups,bool $draft=false,string $layout='classic'):string {
+  require_once __DIR__.'/receipt-clean.php';
+  $clean=$layout==='clean';
+  $render=$clean?'lrCleanHalf':'lrHalf';
   $img='data:image/png;base64,'.base64_encode(file_get_contents(__DIR__.'/assets/lr-half.png'));
   $pages=[];$qr=lrQrImages($groups,$draft);
   foreach($groups as $g){
@@ -83,7 +86,8 @@ function receiptHtml(array $groups,bool $draft=false):string {
     }
   }
   $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:841pt;page-break-after:always;background:#fff;overflow:hidden}.sheet.last{page-break-after:auto}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
-  $html='<!doctype html><html lang="en"><meta charset="utf-8"><title>Lorry receipt · A4 portrait</title><style>'.$css.'</style><body>';
-  foreach($pages as $i=>[$top,$bottom])$html.='<div class="sheet'.($i===count($pages)-1?' last':'').'">'.lrHalf($top,$draft,false,$qr[$top[0]['key']]).($bottom?lrHalf($bottom,$draft,true,$qr[$bottom[0]['key']]):'').'</div>';
+  if($clean)$css.='.half.clean{background-image:none;font-family:"DejaVu Sans",sans-serif}.half.clean.lower{top:415.9pt}.bold{font-weight:bold}.clean-cut{position:absolute;top:420.9pt;left:27pt;width:541pt;border-top:.5pt dashed #606060}';
+  $html='<!doctype html><html lang="en"><meta charset="utf-8"><title>Lorry receipt · A4 portrait</title><style>'.$css.'</style><body data-layout="'.e($layout).'">';
+  foreach($pages as $i=>[$top,$bottom])$html.='<div class="sheet'.($i===count($pages)-1?' last':'').'">'.$render($top,$draft,false,$qr[$top[0]['key']]).($bottom?($clean?'<div class="clean-cut" aria-hidden="true"></div>':'').$render($bottom,$draft,true,$qr[$bottom[0]['key']]):'').'</div>';
   return $html.'</body></html>';
 }
