@@ -134,7 +134,6 @@ with tempfile.TemporaryDirectory() as db:
             pdf=client.get(base,params={'action':'pdf','keys':','.join(j['keys'])},timeout=30)
             assert pdf.ok and pdf.content.startswith(b'%PDF'), pdf.text[:500]
             pages=PdfReader(BytesIO(pdf.content)).pages
-            print('PDF-CLASSIC-PAGES',len(pages),[p.extract_text()[:180] for p in pages],flush=True)
             assert len(pages)==1
             page=pages[0]
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
