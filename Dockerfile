@@ -11,7 +11,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM php:8.4-apache
-RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev libpng-dev unzip git python3-qrcode python3-pil && docker-php-ext-install zip gd && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev libpng-dev unzip git && docker-php-ext-install zip gd && rm -rf /var/lib/apt/lists/*
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 WORKDIR /srv/lr
 COPY php/ ./php/

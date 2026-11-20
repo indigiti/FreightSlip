@@ -18,6 +18,16 @@ with tempfile.TemporaryDirectory() as db:
         with (root/'public/example-dispatch.csv').open('rb') as f:
             u=post('upload',files={'workbook':f}).json()
         assert u['rows']==3 and u['map']['freight']==7 and u['map']['address']==11
+        if os.environ.get('LR_RELEASE_SMOKE'):
+            import csv, io
+            from openpyxl import Workbook
+            book=Workbook(); sheet=book.active; sheet.title='Dispatch'
+            sheet.append(['Dispatch report']); sheet.append([None])
+            for row in csv.reader((root/'public/example-dispatch.csv').read_text().splitlines()): sheet.append(row)
+            xlsx=io.BytesIO();book.save(xlsx)
+            x=post('upload',files={'workbook':('dispatch.xlsx',xlsx.getvalue())})
+            assert x.ok, x.text
+            xm=x.json();assert xm['sheet']=='Dispatch' and xm['header']==3 and xm['map']['freight']==7 and xm['rows']==3
         source=(root/'public/example-dispatch.csv').read_bytes()
         shifted=b'Dispatch report\n\n'+source.replace(b'TRANSPORT_ADDRESS',b'',1)
         detected=post('upload',files={'workbook':('shifted.csv',shifted)}).json()
@@ -61,6 +71,16 @@ with tempfile.TemporaryDirectory() as db:
         if os.environ.get('LR_BATCH_HTML'): Path(os.environ['LR_BATCH_HTML']).write_text(layout.text)
         assert requests.post(base,params={'action':'issue'},json=j,timeout=2).status_code==403
         assert requests.get(base,params={'action':'pdf','keys':g[0]['key'],'review':r['review']},timeout=2).status_code==422
+        if os.environ.get('LR_RELEASE_SMOKE'):
+            from io import BytesIO
+            from pypdf import PdfReader
+            pdf=requests.get(base,params={'action':'pdf','keys':','.join(j['keys'])},timeout=30)
+            assert pdf.ok and pdf.content.startswith(b'%PDF'), pdf.text[:500]
+            pages=PdfReader(BytesIO(pdf.content)).pages
+            assert len(pages)==1
+            page=pages[0]
+            assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
+            assert all(gp['id'] in page.extract_text() for gp in g[:2])
         print('PHP smoke test passed: upload, validation, preview, atomic issuance, saved register, duplicate rejection.')
     finally:
         server.terminate();server.wait(timeout=5)

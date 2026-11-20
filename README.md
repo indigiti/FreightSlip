@@ -39,4 +39,26 @@ The LR Register is the landing page. Its counters come from the PHP register and
 
 Each receipt QR includes the recorded parties, addresses, destination, date, all line items, quantities, references and available freight values. It uses plain text, works offline, and does not include blank/unrecorded values or raw spreadsheet rows. Draft QR text is marked DRAFT. Reprints encode the issued snapshot. Anyone who can see the receipt can read an offline QR; handle printed receipts and PDFs as dispatch data.
 
-QR PNGs are generated on the same host by `php/qr_encode.py`; no third-party QR API is contacted. Docker installs Python qrcode and Pillow. On another PHP host install both packages for the PHP process's Python 3 interpreter, enable `proc_open`, and set `LR_QR_PYTHON` to the absolute interpreter path if needed. FastAPI remains optional. If the full payload is too dense for the print box, the app does not truncate it. For issued receipts only, set `LR_QR_DETAILS_ENDPOINT` to the exact HTTPS API endpoint (e.g. `https://your-private-host/lr/api/index.php`, no query string) **only after securing the site and API behind authentication**. The overflow QR then points there, requiring authorized access. Without that setting, an oversized receipt prints an explicit notice, and the complete issued details remain available from the register's Details link. Test a physical A4 print at 100% with your intended scanner or phone app.
+QR PNGs are generated locally with Composer and PHP GD; no third-party QR API, Python subprocess, or shell access is needed. FastAPI remains optional. If the full payload is too dense for the print box, the app does not truncate it. For issued receipts only, set `LR_QR_DETAILS_ENDPOINT` to the exact HTTPS API endpoint (e.g. `https://your-private-host/lr/api/index.php`, no query string) **only after securing the site and API behind authentication**. The overflow QR then points there, requiring authorized access. Without that setting, an oversized receipt prints an explicit notice, and the complete issued details remain available from the register's Details link. Test a physical A4 print at 100% with your intended scanner or phone app.
+
+
+## DigiOps / Cloudways staging
+
+The main branch workflow builds a static Next.js export for `/freightslip/` and publishes
+`digiops-release` with the `DIGIOPS-RELEASE/1` manifest. Set the DigiOps paths to
+`public_html/freightslip/` and `private_html/freightslip/`. PHP 8.2+ and the Composer
+platform extensions must be enabled on Cloudways (including GD, ZIP, DOM/XML and mbstring).
+The bundled API and Composer dependencies live under the private path. FastAPI is optional.
+
+**Before using the app**, place `auth.json` in `private_html/freightslip/storage/`
+via SFTP (or the host file manager). The PHP user must be able to read it and write the storage
+folder. Use `{"username":"operator","password_hash":"<password_hash generated locally>"}`.
+Generate the hash locally using PHP `password_hash()` with `PASSWORD_DEFAULT`; do not commit
+or upload a plaintext password. The register, upload, issuance, preview, PDF, and details
+routes fail closed without valid configuration. Sign in via `/freightslip/api/index.php`
+and then open the dashboard. Keep HTTPS enabled. The `storage/` folder is persistent across releases.
+
+DigiOps can check `/freightslip/` for dashboard availability. Separately check
+`/freightslip/api/index.php?action=health` for PHP extensions, private auth configuration,
+and writable storage. This health endpoint returns only a generic status. Verify the PDF and
+Excel flow with a non-sensitive test workbook before entering live dispatch data.
