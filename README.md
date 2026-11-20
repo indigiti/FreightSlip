@@ -48,7 +48,20 @@ The main branch workflow builds a static Next.js export for `/freightslip/` and 
 `digiops-release` with the `DIGIOPS-RELEASE/1` manifest. Set the DigiOps paths to
 `public_html/freightslip/` and `private_html/freightslip/`. PHP 8.2+ and the Composer
 platform extensions must be enabled on Cloudways (including GD, ZIP, DOM/XML and mbstring).
-The bundled API and Composer dependencies live under the private path. FastAPI is optional.
+The API and Composer dependencies live under the private path. FastAPI is optional.
+
+**Routine updates:** `digiops-release` omits Composer dependencies when the resolved package
+versions match `deploy/runtime-baseline.json`. DigiOps overlays private files, so it reuses the
+matching runtime from the original full package or a versioned runtime directory. It checks
+package versions and source/dist references before accepting requests. Do not delete the private
+app directory when applying a slim update.
+
+**First install or runtime repair:** In GitHub Actions → FreightSlip DigiOps release → Run workflow,
+enable `bundle_runtime` on `main`. Deploy the artifact from that run. The workflow also bundles a
+versioned runtime when Composer resolves versions different from the baseline. After a dependency
+upgrade is verified and installed on each target, update `deploy/runtime-baseline.json` to the new
+installed versions so routine packages are slim again. Keep versioned runtime directories while
+any retained release still references them. No Composer install on Cloudways is needed.
 
 **Before using the app**, place `auth.json` in `private_html/freightslip/storage/`
 via SFTP (or the host file manager). The PHP user must be able to read it and write the storage

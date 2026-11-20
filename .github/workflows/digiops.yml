@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      bundle_runtime:
+        description: Include PHP dependencies for a fresh host or runtime repair
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -38,13 +43,26 @@ jobs:
           find php deploy -path php/vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
           LR_RELEASE_SMOKE=1 python tests/smoke.py
       - name: Package and verify the Cloudways layout
+        env:
+          FREIGHTSLIP_FULL_RUNTIME: ${{ inputs.bundle_runtime }}
         run: |
           mkdir -p release/public/api release/private/app release/private/build
           cp -a out/. release/public/
           cp deploy/digiops-api.php release/public/api/index.php
-          cp -a php/*.php php/assets php/vendor release/private/app/
+          cp -a php/*.php php/assets release/private/app/
+          cp deploy/runtime.php release/private/app/digiops-runtime.php
+          runtime=$(php deploy/runtime.php)
+          runtime_id=${runtime% *}
+          mode=${runtime##* }
+          printf '%s\n' "$runtime_id" > release/private/app/digiops-runtime.sha256
+          if [ "$mode" = full ]; then
+            mkdir -p release/private/app/runtimes
+            cp -a php/vendor "release/private/app/runtimes/$runtime_id"
+          fi
           php deploy/package.php
-          python tests/digiops.py
+          FREIGHTSLIP_PACKAGE_MODE="$mode" python tests/digiops.py
+          du -sh release release/public release/private
+          echo "FreightSlip package mode: $mode" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:

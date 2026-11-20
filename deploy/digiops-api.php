@@ -10,7 +10,24 @@ function gate(int $status, string $error): never {
     echo json_encode(['error'=>$error], JSON_THROW_ON_ERROR);
     exit;
 }
-if (!is_file($private.'/app/vendor/autoload.php')) gate(503, 'FreightSlip runtime unavailable.');
+$app = $private.'/app';
+if (!is_readable($app.'/digiops-runtime.php') || !is_readable($app.'/digiops-runtime.sha256')) {
+    gate(503, 'FreightSlip runtime metadata unavailable.');
+}
+require $app.'/digiops-runtime.php';
+$runtime = trim((string) file_get_contents($app.'/digiops-runtime.sha256'));
+$autoload = null;
+if (preg_match('/^[a-f0-9]{64}$/D', $runtime)) {
+    foreach ([$app.'/runtimes/'.$runtime, $app.'/vendor'] as $vendor) {
+        $packages = freightRuntimePackages($vendor);
+        if ($packages !== null && hash_equals($runtime, freightRuntimeHash($packages))) {
+            $autoload = $vendor.'/autoload.php';
+            break;
+        }
+    }
+}
+if ($autoload === null) gate(503, 'Matching FreightSlip runtime unavailable. Deploy a package with bundle_runtime enabled.');
+define('FREIGHTSLIP_VENDOR_AUTOLOAD', $autoload);
 $auth = is_readable($storage.'/auth.json') ? json_decode((string) file_get_contents($storage.'/auth.json'), true) : null;
 $configured = is_array($auth) && is_string($auth['username']??null) && $auth['username']!==''
     && is_string($auth['password_hash']??null) && password_get_info($auth['password_hash'])['algo']!==null;

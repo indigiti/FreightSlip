@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 function vendor():void {
-  if(!is_file(__DIR__.'/vendor/autoload.php'))throw new RuntimeException('Install PHP dependencies with composer install inside php/.');
-  require_once __DIR__.'/vendor/autoload.php';
+  $autoload=defined('FREIGHTSLIP_VENDOR_AUTOLOAD')?FREIGHTSLIP_VENDOR_AUTOLOAD:__DIR__.'/vendor/autoload.php';
+  if(!is_file($autoload))throw new RuntimeException('Install PHP dependencies with composer install inside php/.');
+  require_once $autoload;
 }
 function loadSheet(string $path,string $name,int $requested,string $requestedTab=""):array {
   if($requested<0 || $requested>100)throw new InvalidArgumentException('Header row must be between 1 and 100, or leave blank for auto-detection.');
