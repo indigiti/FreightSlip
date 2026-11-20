@@ -29,7 +29,7 @@ export default function Home(){
  const toggle=(k:string)=>setSelection(old=>old.includes(k)?old.filter(x=>x!==k):old.length<100?[...old,k]:old);
  const run=async(fn:()=>Promise<void>)=>{setBusy(true);setError('');setNote('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Unexpected error.');}finally{setBusy(false);}};
  const loadRegister=async()=>{const data=await api<RegisterResponse>('register');setRecords(data.groups);setWorkbooks(data.workbooks);setWorkbookFilter(old=>old&&data.workbooks.some(w=>w.id===old)?old:data.workbooks[0]?.id||'all');};
- const openRegister=()=>{setSelection([]);setQuery('');setFilter('all');setTab('register');void run(loadRegister);};
+ const openRegister=()=>{setSelection([]);setQuery('');setFilter('all');setWorkbookFilter('');setTab('register');void run(loadRegister);};
  const openImport=()=>{setTab('import');setSelection([]);setError('');setNote('');};
  const openSettings=()=>{setTab('settings');setSelection([]);void run(async()=>{const data=await api<OfficeSettingsResponse>('settings');setOfficeSettings(data.settings);setSettingsVersion(data.version);});};
  const saveOfficeSettings=()=>{if(!officeSettings)return;void run(async()=>{const data=await api<OfficeSettingsResponse>('settings',{settings:officeSettings,version:settingsVersion});setOfficeSettings(data.settings);setSettingsVersion(data.version);invalidate();setNote('Office details saved. New LR reviews will use these details. Issued receipts remain unchanged.');});};
