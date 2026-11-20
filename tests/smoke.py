@@ -144,6 +144,33 @@ with tempfile.TemporaryDirectory() as db:
             assert len(clean_pages)==1
             clean_text=clean_pages[0].extract_text()
             assert 'Freight (Rs.)' in clean_text and all(clean_text.count(gp['id'])==1 for gp in g[:2])
+        # Workbook registers use a unique import ID, not the filename: repeat
+        # uploads with the same filename must never silently merge.
+        register1=client.get(base,timeout=2).json()
+        assert len(register1['workbooks'])==1
+        assert register1['workbooks'][0]['name']=='example-dispatch.csv'
+        assert register1['workbooks'][0]['count']==2
+        first_id=register1['workbooks'][0]['id']
+        assert len(first_id)==32
+        assert all(row['workbook_id']==first_id for row in register1['groups'])
+        distinct=source.replace(b'DEMO-26',b'DEMO-36')
+        second_upload=post('upload',files={'workbook':('example-dispatch.csv',distinct)}).json()
+        second_review=post('review',json={'upload':second_upload['upload'],'map':second_upload['map'],'rules':rules}).json()
+        assert [r['status'] for r in second_review['groups']]==['ready','ready','blocked']
+        second_keys=[r['key'] for r in second_review['groups'][:2]]
+        assert post('issue',json={'review':second_review['review'],'keys':second_keys}).status_code==201
+        register2=client.get(base,timeout=2).json()
+        assert len(register2['groups'])==4 and len(register2['workbooks'])==2
+        ids={w['id'] for w in register2['workbooks']}
+        assert len(ids)==2 and first_id in ids
+        assert all(w['name']=='example-dispatch.csv' and w['count']==2 for w in register2['workbooks'])
+        assert {r['workbook_id'] for r in register2['groups']}==ids
+        assert all(r['source_batch']==r['workbook_id'] for r in register2['groups'])
+        assert all(r['source_sheet']=='CSV' for r in register2['groups'])
+        # A new workbook with an already-issued LR remains blocked globally.
+        duplicate_upload=post('upload',files={'workbook':('another.xlsx.csv',source)}).json()
+        duplicate_review=post('review',json={'upload':duplicate_upload['upload'],'map':duplicate_upload['map'],'rules':rules}).json()
+        assert duplicate_review['groups'][0]['status']=='issued'
         assert client.post(base,params={'action':'logout'},headers=hdr,json={},timeout=3).json()['signedOut'] is True
         assert client.get(base,params={'action':'session'},timeout=2).status_code==401
         print('PHP smoke test passed: upload, validation, preview, atomic issuance, saved register, duplicate rejection.')
