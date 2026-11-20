@@ -34,11 +34,28 @@ with tempfile.TemporaryDirectory() as db:
         csrf=logged.json()['csrf']
         assert client.get(base,params={'action':'session'},timeout=2).json()['username']==username
         hdr={'X-LR-Studio':'1','X-LR-CSRF':csrf}
+        # Office defaults come from authenticated private settings, not from Excel.
+        initial=client.get(base,params={'action':'settings'},timeout=2).json()
+        assert initial['version']==0
+        assert initial['settings']['carrier']=='SHRIRAM TRANSPORT'
+        assert initial['settings']['consignor_address']=="C/O Shriram Enterprises\nUrulidevachi, Pune 412308, Maharashtra"
+        assert initial['settings']['address'].startswith('MILKAT 2345')
+        assert client.post(base,params={'action':'settings'},headers={'X-LR-Studio':'1'},
+                           json={'version':0,'settings':initial['settings']},timeout=2).status_code==403
+        assert client.post(base,params={'action':'settings'},headers=hdr,
+                           json={'version':0,'settings':dict(initial['settings'],carrier='')},timeout=2).status_code==422
+        saved=client.post(base,params={'action':'settings'},headers=hdr,
+                          json={'version':0,'settings':dict(initial['settings'],address='Test office road, Pune, Maharashtra')},timeout=2)
+        assert saved.ok, saved.text
+        assert saved.json()['version']==1
+        assert client.post(base,params={'action':'settings'},headers=hdr,
+                           json={'version':0,'settings':initial['settings']},timeout=2).status_code==409
         assert client.post(base,params={'action':'review'},headers={'X-LR-Studio':'1'},json={},timeout=2).status_code==403
         def post(action,**kwargs): return client.post(base,params={'action':action},headers=hdr,timeout=5,**kwargs)
         with (root/'public/example-dispatch.csv').open('rb') as f:
             u=post('upload',files={'workbook':f}).json()
         assert u['rows']==3 and u['map']['freight']==7 and u['map']['address']==11
+        assert 'carrier' not in u['required'] # configured by office settings, not a mandatory Excel column
         if os.environ.get('LR_RELEASE_SMOKE'):
             import csv, io
             from openpyxl import Workbook
@@ -64,6 +81,8 @@ with tempfile.TemporaryDirectory() as db:
         assert post('review',json={**data,'rules':{**rules,'date':''}}).status_code==422
         r=post('review',json=data).json();g=r['groups'];assert [x['status'] for x in g]==['ready','ready','blocked']
         assert g[0]['items'][0]['obd']=='00010001' and g[0]['items'][0]['weight']==''
+        assert all(x['common']['address']=='Test office road, Pune, Maharashtra' for x in g)
+        assert all(x['common']['consignor_address'].startswith('C/O Shriram Enterprises') for x in g)
         assert post('issue',json={'review':r['review'],'keys':[g[0]['key'],g[2]['key']]}).status_code==422
         assert client.get(base,timeout=2).json()['groups']==[]
         p=client.get(base,params={'action':'preview','keys':g[0]['key'],'review':r['review']},timeout=2)
@@ -78,6 +97,13 @@ with tempfile.TemporaryDirectory() as db:
         issued=client.get(base,params={'action':'preview','keys':g[0]['key']},timeout=2)
         assert issued.ok and 'DRAFT · NOT ISSUED' not in issued.text and '370.00' in issued.text
         assert len(client.get(base,timeout=2).json()['groups'])==2
+        # Editing office settings must not rewrite already-issued LR snapshots.
+        revised=client.post(base,params={'action':'settings'},headers=hdr,json={
+            'version':1,'settings':dict(initial['settings'],carrier='ANOTHER TRANSPORTER')
+        },timeout=2)
+        assert revised.ok and revised.json()['version']==2
+        unchanged=client.get(base,params={'action':'preview','keys':g[0]['key']},timeout=2)
+        assert unchanged.ok and unchanged.text==issued.text
         layout=client.get(base,params={'action':'preview','keys':','.join(j['keys'])},timeout=2)
         assert layout.ok and layout.text.count('<div class="sheet')==1 and layout.text.count('<div class="half')==2
         assert all(layout.text.count(x['id'])==1 for x in g[:2])

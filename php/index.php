@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require __DIR__.'/http.php';require __DIR__.'/domain.php';require __DIR__.'/storage.php';require __DIR__.'/auth.php';require __DIR__.'/import.php';require __DIR__.'/receipt.php';require __DIR__.'/qr.php';
+require __DIR__.'/http.php';require __DIR__.'/domain.php';require __DIR__.'/storage.php';require __DIR__.'/settings.php';require __DIR__.'/auth.php';require __DIR__.'/import.php';require __DIR__.'/receipt.php';require __DIR__.'/qr.php';
 function suggestHeaders(array $sheet):array {
   $url=getenv('LR_AI_URL');if(!$url)throw new DomainException('Mapping assistant is disabled. Select columns manually.');
   $body=json_encode(['headers'=>$sheet['headers'],'fields'=>array_map(fn($s)=>array_slice($s,0),FIELDS),'mapped'=>(object)known($sheet['headers'])],JSON_THROW_ON_ERROR);
@@ -18,13 +18,14 @@ try {
       $file=$_FILES['workbook']??null;
       if(!$file || $file['error']!==UPLOAD_ERR_OK || $file['size']>5000000 || !is_uploaded_file($file['tmp_name']))throw new InvalidArgumentException('Upload a workbook up to 5 MB.');
       $header=(string)($_POST['header']??'');if($header!==''&&!preg_match('/^[1-9]\d{0,2}$/D',$header))throw new InvalidArgumentException('Invalid header row.');
-      $sheet=loadSheet($file['tmp_name'],basename($file['name']),(int)$header,(string)($_POST['sheet']??''));$id=saveDraft('upload',$sheet);[$mapping,$inferred]=detectColumns($sheet);
-      respond(['upload'=>$id,'file'=>$sheet['file'],'sheet'=>$sheet['sheet'],'sheets'=>$sheet['sheets'],'inferred'=>$inferred,'header'=>$sheet['header_row'],'headers'=>$sheet['headers'],'rows'=>count($sheet['rows']),'map'=>(object)$mapping,'fields'=>array_map(fn($v)=>$v[0],FIELDS),'required'=>REQUIRED,'assistant'=>(bool)getenv('LR_AI_URL')]);
+      $sheet=loadSheet($file['tmp_name'],basename($file['name']),(int)$header,(string)($_POST['sheet']??''));$id=saveDraft('upload',$sheet);[$mapping,$inferred]=detectColumns($sheet);$configured=lrSettingsRead()['settings'];
+      respond(['upload'=>$id,'file'=>$sheet['file'],'sheet'=>$sheet['sheet'],'sheets'=>$sheet['sheets'],'inferred'=>$inferred,'header'=>$sheet['header_row'],'headers'=>$sheet['headers'],'rows'=>count($sheet['rows']),'map'=>(object)$mapping,'fields'=>array_map(fn($v)=>$v[0],FIELDS),'required'=>array_values(array_filter(REQUIRED,fn($f)=>$f!=='carrier' || $configured['carrier']==='')),'assistant'=>(bool)getenv('LR_AI_URL')]);
     }
     $p=payload();
     if($action==='suggest')respond(suggestHeaders(draft('upload',$p['upload']??null)));
+    if($action==='settings')respond(lrSettingsSave($p));
     if($action==='review'){
-      $s=draft('upload',$p['upload']??null);$groups=analyze($s,requiredArray($p['map']??null),requiredArray($p['rules']??null),registry());
+      $settings=lrSettingsRead();$s=draft('upload',$p['upload']??null);$groups=analyze($s,requiredArray($p['map']??null),requiredArray($p['rules']??null),registry(),$settings['settings']);
       $id=saveDraft('review',['file'=>$s['file'],'groups'=>$groups]);respond(['review'=>$id,'groups'=>$groups]);
     }
     if($action==='issue'){respond(['groups'=>issue(draft('review',$p['review']??null),requiredArray($p['keys']??null))],201);}
@@ -35,6 +36,7 @@ try {
       if(!$record)respond(['error'=>'Receipt not found.'],404);
       header('Content-Type: text/plain; charset=utf-8');echo lrQrText($record,false);exit;
     }
+    if($action==='settings')respond(lrSettingsRead());
     if($action==='register')respond(['groups'=>array_reverse(array_values(registry()))]);
     if(in_array($action,['preview','pdf'],true)){
       $keys=explode(',',(string)($_GET['keys']??''));if(count($keys)>100 || count(array_unique($keys))!==count($keys))throw new InvalidArgumentException('Select up to 100 distinct receipts.');
@@ -45,7 +47,7 @@ try {
       if(!in_array($layout,['classic','clean'],true))throw new InvalidArgumentException('Select Classic or Print Clean.');
       $html=receiptHtml($groups,$isDraft,$layout);
       if($action==='preview'){header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'");header('Content-Type: text/html; charset=utf-8');echo $html;exit;}
-      vendor();$opts=new \Dompdf\Options();$opts->set('defaultMediaType','print');$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
+      vendor();$opts=new \Dompdf\Options();$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
     }
   }
   respond(['error'=>'Route not found.'],404);

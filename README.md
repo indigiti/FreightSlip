@@ -105,3 +105,13 @@ unauthenticated initialization endpoint: credentials cannot be established on
 the public internet without authenticated access to private Cloudways files.
 If the health endpoint still fails after installing `auth.json`, check PHP
 permissions and extensions, the deployed runtime, and host error logs.
+
+### Office Settings · central consignor and transporter details
+
+After signing in, open **Office Settings** from the left sidebar. The editable fields initially contain:
+
+- **Consignor address:** `C/O Shriram Enterprises` followed by `Urulidevachi, Pune 412308, Maharashtra` on the next line.
+- **Transport name:** `SHRIRAM TRANSPORT`.
+- **Transport address:** `MILKAT 2345 , Pune Saswad Road , Uruli Devachi -412308 , Maharashtra`.
+
+The values are saved in the persistent private file `private_html/freightslip/storage/settings.json` (or the configured `LR_DATA_DIR/settings.json` in a local installation), never in the publicly served frontend. Saving requires an authenticated session and the normal CSRF header; concurrent edits are rejected using a revision number. New batch reviews always use these settings, even if the imported Excel has different transporter/address columns or no transporter column. The consignor **company/name** still comes from Excel. Existing issued receipts are snapshots and never change when office settings are edited; outstanding reviews should be revalidated after an edit. This is a single-office configuration, not a per-customer address book.

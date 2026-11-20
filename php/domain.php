@@ -25,7 +25,7 @@ function numberValue(string $raw,bool $integer=false):?string {
     return $integer?(string)(int)$v:$v;
 }
 function paise(string $v):?int {if(!preg_match('/^(\d+)(?:\.(\d{1,2}))?$/D',$v,$m))return null;return (int)$m[1]*100+(int)str_pad($m[2]??'',2,'0');}
-function analyze(array $sheet,array $map,array $rules,array $issued):array {
+function analyze(array $sheet,array $map,array $rules,array $issued,array $configured=[]):array {
     $seen=[];foreach($map as $f=>$col){if(!isset(FIELDS[$f]) || !is_int($col) || !array_key_exists($col,$sheet['headers']) || isset($seen[$col]))throw new InvalidArgumentException('Map each source column to no more than one valid field.');$seen[$col]=true;}
     if(!in_array($rules['freight']??'',['base','total'],true)) throw new InvalidArgumentException('Choose whether FRIGHT is base freight or final total.');
     if(!in_array($rules['date']??'',['lr_date','so_date','override'],true)) throw new InvalidArgumentException('Select an LR issue date source.');
@@ -33,6 +33,9 @@ function analyze(array $sheet,array $map,array $rules,array $issued):array {
     $groups=[];
     foreach($sheet['rows'] as $row){$line=$row['line'];$v=[];$errors=[];
       foreach(FIELDS as $f=>$_){$v[$f]=isset($map[$f])?trim((string)($row['cells'][$map[$f]]??'')):'';}
+      // Centrally configured parties override source columns for new drafts only.
+      foreach (['consignor_address','carrier','address'] as $field)
+        if (($configured[$field]??'')!=='') $v[$field]=$configured[$field];
       foreach(REQUIRED as $f)if($v[$f]==='')$errors[]="Row $line: missing ".FIELDS[$f][0].'.';
       foreach($v as $f=>$s) if(strlen($s)>300 || !preg_match('//u',$s)) $errors[]="Row $line: invalid or oversized ".FIELDS[$f][0].'.';
       $id=$v['lr_no'];if($id!=='' && !preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/D',$id))$errors[]="Row $line: LR number must use letters, numbers, dots, underscores or hyphens.";
