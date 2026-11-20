@@ -23,7 +23,8 @@ with tempfile.TemporaryDirectory() as d:
     storage = private/'storage'; storage.mkdir()
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0)); port=s.getsockname()[1]
-    server=subprocess.Popen(['php','-S',f'127.0.0.1:{port}','-t',str(host/'public_html')])
+    server=subprocess.Popen(['php','-d','session.save_path=/no-such/php-session-directory',
+                             '-S',f'127.0.0.1:{port}','-t',str(host/'public_html')])
     base=f'http://127.0.0.1:{port}/freightslip/'
     api=base+'api/index.php'
     try:
@@ -54,6 +55,8 @@ with tempfile.TemporaryDirectory() as d:
             assert r.ok,r.text
             return r.json()['csrf']
         csrf=sign_in('smoke',pw)
+        assert (storage/'sessions').is_dir()
+        assert list((storage/'sessions').glob('sess_*')), 'PHP session was not stored in private storage'
         assert client.get(api,timeout=5).json()=={'groups':[]}
         assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
         # Browser-generated offline PBKDF2 credentials: same input format as Web Crypto.

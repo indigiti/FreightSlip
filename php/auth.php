@@ -45,15 +45,30 @@ function lrCookieSecure(): bool {
         || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off')
         || (int)($_SERVER['SERVER_PORT']??0)===443;
 }
+function lrSessionDirectory(): string {
+    // Avoid Cloudways PHP-FPM's global session.save_path: it may be inaccessible
+    // to this application. Keep sessions beside the persistent private JSON store.
+    $directory=dbRoot().'/sessions';
+    if (!is_dir($directory) && !mkdir($directory,0700,true) && !is_dir($directory))
+        throw new RuntimeException('Cannot create private session storage.');
+    if (!is_writable($directory)) throw new RuntimeException('Private session storage is not writable.');
+    return $directory;
+}
 function lrSession(): void {
     if (session_status()===PHP_SESSION_ACTIVE) return;
+    $directory=lrSessionDirectory();
+    ini_set('session.save_handler','files');
+    ini_set('session.save_path',$directory);
+    ini_set('session.gc_maxlifetime','86400');
+    if (ini_get('session.save_handler')!=='files' || ini_get('session.save_path')!==$directory)
+        throw new RuntimeException('PHP session storage cannot be configured.');
     ini_set('session.use_strict_mode','1');
     ini_set('session.use_only_cookies','1');
     ini_set('session.use_trans_sid','0');
     session_name('FREIGHTSLIP_SESSION');
     session_set_cookie_params(['lifetime'=>0,'path'=>lrCookiePath(),
         'secure'=>lrCookieSecure(),'httponly'=>true,'samesite'=>'Lax']);
-    if (!session_start()) throw new RuntimeException('Unable to start FreightSlip session.');
+    if (!@session_start()) throw new RuntimeException('Unable to start FreightSlip session.');
 }
 function lrAuthFingerprint(array $auth): string {
     return hash('sha256',json_encode($auth,JSON_THROW_ON_ERROR));
@@ -123,6 +138,8 @@ function lrHealth(array $auth): never {
     foreach (['gd','zip','dom','mbstring','xml','xmlreader','xmlwriter','simplexml','ctype','iconv','fileinfo','filter','zlib'] as $ext) {
         if (!extension_loaded($ext)) respond(['error'=>'FreightSlip runtime not ready.'],503);
     }
+    try { lrSessionDirectory(); }
+    catch (Throwable $error) { error_log('FreightSlip: private session storage unavailable'); respond(['error'=>'FreightSlip session storage unavailable.'],503); }
     respond(['status'=>'ok']);
 }
 function lrAuthenticate(string $action,string $method): void {
