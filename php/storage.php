@@ -18,6 +18,33 @@ function draft(string $type,mixed $id):array {
   $data=readJson(dbRoot()."/$type-$id.json");if(!$data)throw new InvalidArgumentException('Draft not found. Upload the workbook again.');return $data;
 }
 function registry():array {return readJson(dbRoot().'/register.json');}
+// Each issued LR belongs to the exact import/worksheet it was reviewed from.
+// Older records have no immutable import token; group those by source filename and
+// mark them as legacy rather than pretending their historical batch is known.
+function lrWorkbookId(array $receipt):string {
+  $batch=$receipt['source_batch']??null;
+  if(is_string($batch) && preg_match('/^[a-f0-9]{32}$/D',$batch)) return $batch;
+  return 'legacy-'.substr(hash('sha256',(string)($receipt['source_file']??'')),0,20);
+}
+function lrWorkbookIndex(array $records):array {
+  $index=[];
+  foreach($records as $receipt) {
+    $id=lrWorkbookId($receipt);
+    $name=(string)($receipt['source_file']??'');
+    if($name==='')$name='Earlier receipts (source unknown)';
+    $legacy=str_starts_with($id,'legacy-');
+    if(!isset($index[$id]))$index[$id]=[
+      'id'=>$id,'name'=>$name,'sheet'=>(string)($receipt['source_sheet']??''),
+      'count'=>0,'last_issued'=>'','legacy'=>$legacy
+    ];
+    $index[$id]['count']++;
+    $issued=(string)($receipt['issued_at']??'');
+    if($issued>$index[$id]['last_issued'])$index[$id]['last_issued']=$issued;
+  }
+  $result=array_values($index);
+  usort($result,fn($a,$b)=>strcmp($b['last_issued'],$a['last_issued']));
+  return $result;
+}
 function issue(array $review,array $keys):array {
   if(!$keys || count($keys)>100 || count(array_unique($keys,SORT_STRING))!==count($keys))throw new InvalidArgumentException('Select 1–100 distinct receipts to issue.');
   $index=array_column($review['groups'],null,'key');$lock=fopen(dbRoot().'/register.lock','c');
@@ -25,7 +52,10 @@ function issue(array $review,array $keys):array {
   try{if(!flock($lock,LOCK_EX))throw new RuntimeException('Could not lock register.');$current=registry();$out=[];
     foreach($keys as $key){if(!is_string($key)||!isset($index[$key])||$index[$key]['status']!=='ready')throw new InvalidArgumentException('Only validated receipts can be issued.');
       if(isset($current[$key]))throw new DomainException("LR {$index[$key]['id']} is already issued. Nothing in this selection was saved.");
-      $g=$index[$key];$g['status']='issued';$g['issued_at']=gmdate(DATE_ATOM);$g['source_file']=$review['file'];$current[$key]=$g;$out[]=$g;
+      $g=$index[$key];$g['status']='issued';$g['issued_at']=gmdate(DATE_ATOM);$g['source_file']=$review['file'];
+      $g['source_sheet']=(string)($review['sheet']??'');
+      $g['source_batch']=(string)($review['upload']??'');
+      $current[$key]=$g;$out[]=$g;
     }
     writeJson(dbRoot().'/register.json',$current);return $out;
   }finally{flock($lock,LOCK_UN);fclose($lock);}

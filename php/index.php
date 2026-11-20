@@ -26,7 +26,7 @@ try {
     if($action==='settings')respond(lrSettingsSave($p));
     if($action==='review'){
       $settings=lrSettingsRead();$s=draft('upload',$p['upload']??null);$groups=analyze($s,requiredArray($p['map']??null),requiredArray($p['rules']??null),registry(),$settings['settings']);
-      $id=saveDraft('review',['file'=>$s['file'],'groups'=>$groups]);respond(['review'=>$id,'groups'=>$groups]);
+      $id=saveDraft('review',['file'=>$s['file'],'sheet'=>$s['sheet'],'upload'=>$p['upload'],'groups'=>$groups]);respond(['review'=>$id,'groups'=>$groups]);
     }
     if($action==='issue'){respond(['groups'=>issue(draft('review',$p['review']??null),requiredArray($p['keys']??null))],201);}
   }
@@ -37,7 +37,13 @@ try {
       header('Content-Type: text/plain; charset=utf-8');echo lrQrText($record,false);exit;
     }
     if($action==='settings')respond(lrSettingsRead());
-    if($action==='register')respond(['groups'=>array_reverse(array_values(registry()))]);
+    if($action==='register'){
+      $records=registry();
+      $groups=array_reverse(array_values($records));
+      foreach($groups as &$receipt)$receipt['workbook_id']=lrWorkbookId($receipt);
+      unset($receipt);
+      respond(['groups'=>$groups,'workbooks'=>lrWorkbookIndex($records)]);
+    }
     if(in_array($action,['preview','pdf'],true)){
       $keys=explode(',',(string)($_GET['keys']??''));if(count($keys)>100 || count(array_unique($keys))!==count($keys))throw new InvalidArgumentException('Select up to 100 distinct receipts.');
       $isDraft=isset($_GET['review']);if($isDraft && ($action==='pdf'||count($keys)!==1))throw new InvalidArgumentException('Drafts can only be previewed one at a time.');
