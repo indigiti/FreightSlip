@@ -79,3 +79,22 @@ Excel flow with a non-sensitive test workbook before entering live dispatch data
 ### Print layout
 
 Use **Print layout → Print Clean** for a bolder LR number, product names in Particulars, and a single right-aligned freight column. **Classic** remains the default. The selection applies to draft and issued previews, individual PDFs, and batch PDFs. Both retain QR codes and pair different LR numbers on A4; an unpaired LR leaves the bottom slot blank.
+
+### No-terminal Cloudways authentication setup
+
+Open **`/freightslip/setup/`** over HTTPS. Enter a unique username and a strong
+password (minimum 14 characters), then download `auth.json`. The browser derives a
+600,000-round PBKDF2-SHA256 password hash with a random salt using Web Crypto. The
+password is never sent to the FreightSlip server. Using Cloudways' authenticated
+file manager (if available) or a desktop SFTP client, upload **only** the generated
+file to `private_html/freightslip/storage/auth.json` (outside `public_html`). The PHP
+user needs write access to `storage/`. This file is persistent across DigiOps
+releases. Return to `/freightslip/api/index.php?action=health` to verify setup,
+then sign in with the chosen credentials.
+
+The app continues to support existing PHP `password_hash()` credential files.
+The public setup page never writes a server-side file and never offers an
+unauthenticated initialization endpoint: credentials cannot be established on
+the public internet without authenticated access to private Cloudways files.
+If the health endpoint still fails after installing `auth.json`, check PHP
+permissions and extensions, the deployed runtime, and host error logs.

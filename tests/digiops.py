@@ -1,5 +1,5 @@
 from pathlib import Path
-import json, os, re, shutil, socket, subprocess, tempfile, time
+import base64, hashlib, json, os, re, shutil, socket, subprocess, tempfile, time
 import requests
 
 release = Path('release')
@@ -47,9 +47,26 @@ with tempfile.TemporaryDirectory() as d:
         assert requests.get(api,timeout=5).status_code==401
         assert requests.get(api,params={'action':'health'},timeout=5).json()=={'status':'ok'}
         assert requests.get(api,auth=('smoke',pw),timeout=5).json()=={'groups':[]}
+        # Browser-generated offline PBKDF2 credentials: same input format as Web Crypto.
+        salt = bytes(range(16))
+        salted = hashlib.pbkdf2_hmac('sha256',pw.encode('utf-8'),salt,600000,dklen=32)
+        wizard_auth = {'username':'operator','pbkdf2_sha256':{
+            'iterations':600000,
+            'salt':base64.b64encode(salt).decode('ascii'),
+            'hash':base64.b64encode(salted).decode('ascii'),
+        }}
+        (storage/'auth.json').write_text(json.dumps(wizard_auth))
+        assert requests.get(api,auth=('operator','wrong-password'),timeout=5).status_code==401
+        assert requests.get(api,auth=('operator',pw),timeout=5).json()=={'groups':[]}
+        assert requests.get(api,params={'action':'health'},timeout=5).json()=={'status':'ok'}
+        malformed = {'username':'operator','pbkdf2_sha256':dict(wizard_auth['pbkdf2_sha256'],salt='bad')}
+        (storage/'auth.json').write_text(json.dumps(malformed))
+        assert requests.get(api,params={'action':'health'},timeout=5).status_code==503
+        (storage/'auth.json').write_text(json.dumps(wizard_auth))
+        assert requests.get(base+'setup/',timeout=5).ok
         sample = Path('public/example-dispatch.csv')
         with sample.open('rb') as handle:
-            upload = requests.post(api, params={'action':'upload'}, auth=('smoke',pw),
+            upload = requests.post(api, params={'action':'upload'}, auth=('operator',pw),
                                    headers={'X-LR-Studio':'1'}, files={'workbook':(sample.name,handle)}, timeout=5)
         assert upload.ok, upload.text
         if mode == 'update':
