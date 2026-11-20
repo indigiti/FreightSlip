@@ -126,7 +126,7 @@ export default function Home(){
   </button>)}
  </div>
  <div className="print-actions"><Button variant="outline" disabled={busy||!chosen.length} onClick={()=>setPreview({name:`${chosen.length} selected LRs`,url:url('preview',{layout:printLayout,keys:chosen.join(',')})})}><FileText size={16}/> Preview selected</Button>{chosen.length&&!busy?<Button asChild><a href={url('pdf',{layout:printLayout,keys:chosen.join(',')})}><ArrowDownToLine size={16}/> Download PDF</a></Button>:<Button disabled><ArrowDownToLine size={16}/> Download PDF</Button>}<span className="batch-layout-note">{chosen.length%2===1?'Final sheet: bottom slot blank.':'Print at 100% / actual size.'}</span></div>
- </section></div></>}}
+ </section></div></>}
   {tab==='recycle'&&<section className="studio-panel space-y-5 p-5 sm:p-7">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-bold">Recycle Bin</h2><p className="mt-1 text-sm text-slate-600">Removed workspaces are hidden from the LR register, new PDF exports and online QR details until restored. They are permanently purged on the first authenticated visit after 30 days.</p></div>
       <Button disabled={busy||recycle.length===0} variant="outline" onClick={emptyRecycle} className="border-red-200 text-red-700 hover:bg-red-50"><Trash2 size={17}/> Empty Recycle Bin</Button></div>
