@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory() as d:
         assert client.post(api,params={'action':'login'},headers={'X-LR-Studio':'1'},
                            json={'username':'operator','password':'wrong-password'},timeout=8).status_code==401
         csrf=sign_in('operator',pw)
-        assert client.get(api,timeout=5).json()=={'groups':[]}
+        assert client.get(api,timeout=5).json()=={'groups':[],'workbooks':[]}
         assert requests.get(api,params={'action':'health'},timeout=5).json()=={'status':'ok'}
         malformed = {'username':'operator','pbkdf2_sha256':dict(wizard_auth['pbkdf2_sha256'],salt='bad')}
         (storage/'auth.json').write_text(json.dumps(malformed))
