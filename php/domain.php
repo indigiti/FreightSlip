@@ -56,6 +56,6 @@ function analyze(array $sheet,array $map,array $rules,array $issued,array $confi
       if(in_array($item,$g['items'],true))$errors[]="Row $line: duplicate item in the same LR; verify the source.";
       $g['items'][]=$item;$g['rows'][]=$line;$g['issues']=array_merge($g['issues'],$errors);unset($g);
     }
-    foreach($groups as &$g){$g['status']=isset($issued[$g['key']])?'issued':($g['issues']?'blocked':'ready');if(isset($issued[$g['key']])) $g['issues'][]='Already issued. Reprint the saved receipt from the register.';}
+    foreach($groups as &$g){$g['status']=isset($issued[$g['key']])?'issued':($g['issues']?'blocked':'ready');if(isset($issued[$g['key']])) $g['issues'][]=isset($issued[$g['key']]['recycle'])?'This LR is in Recycle Bin. Restore it or permanently delete the workspace before reusing the number.':'Already issued. Reprint the saved receipt from the register.';}
     return array_values($groups);
 }

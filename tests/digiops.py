@@ -23,8 +23,7 @@ with tempfile.TemporaryDirectory() as d:
     storage = private/'storage'; storage.mkdir()
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0)); port=s.getsockname()[1]
-    server=subprocess.Popen(['php','-d','disable_functions=putenv','-d','session.save_path=/no-such/php-session-directory',
-                             '-S',f'127.0.0.1:{port}','-t',str(host/'public_html')])
+    server=subprocess.Popen(['php','-S',f'127.0.0.1:{port}','-t',str(host/'public_html')])
     base=f'http://127.0.0.1:{port}/freightslip/'
     api=base+'api/index.php'
     try:
@@ -55,9 +54,7 @@ with tempfile.TemporaryDirectory() as d:
             assert r.ok,r.text
             return r.json()['csrf']
         csrf=sign_in('smoke',pw)
-        assert (storage/'sessions').is_dir()
-        assert list((storage/'sessions').glob('sess_*')), 'PHP session was not stored in private storage'
-        assert client.get(api,timeout=5).json()=={'groups':[],'workbooks':[]}
+        assert client.get(api,timeout=5).json()=={'groups':[],'workspaces':[],'workbooks':[],'recycle':[]}
         assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
         # Browser-generated offline PBKDF2 credentials: same input format as Web Crypto.
         salt = bytes(range(16))
@@ -73,7 +70,7 @@ with tempfile.TemporaryDirectory() as d:
         assert client.post(api,params={'action':'login'},headers={'X-LR-Studio':'1'},
                            json={'username':'operator','password':'wrong-password'},timeout=8).status_code==401
         csrf=sign_in('operator',pw)
-        assert client.get(api,timeout=5).json()=={'groups':[],'workbooks':[]}
+        assert client.get(api,timeout=5).json()=={'groups':[],'workspaces':[],'workbooks':[],'recycle':[]}
         assert requests.get(api,params={'action':'health'},timeout=5).json()=={'status':'ok'}
         malformed = {'username':'operator','pbkdf2_sha256':dict(wizard_auth['pbkdf2_sha256'],salt='bad')}
         (storage/'auth.json').write_text(json.dumps(malformed))

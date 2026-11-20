@@ -144,33 +144,69 @@ with tempfile.TemporaryDirectory() as db:
             assert len(clean_pages)==1
             clean_text=clean_pages[0].extract_text()
             assert 'Freight (Rs.)' in clean_text and all(clean_text.count(gp['id'])==1 for gp in g[:2])
-        # Workbook registers use a unique import ID, not the filename: repeat
-        # uploads with the same filename must never silently merge.
-        register1=client.get(base,timeout=2).json()
-        assert len(register1['workbooks'])==1
-        assert register1['workbooks'][0]['name']=='example-dispatch.csv'
-        assert register1['workbooks'][0]['count']==2
-        first_id=register1['workbooks'][0]['id']
-        assert len(first_id)==32
-        assert all(row['workbook_id']==first_id for row in register1['groups'])
-        distinct=source.replace(b'DEMO-26',b'DEMO-36')
-        second_upload=post('upload',files={'workbook':('example-dispatch.csv',distinct)}).json()
-        second_review=post('review',json={'upload':second_upload['upload'],'map':second_upload['map'],'rules':rules}).json()
-        assert [r['status'] for r in second_review['groups']]==['ready','ready','blocked']
-        second_keys=[r['key'] for r in second_review['groups'][:2]]
-        assert post('issue',json={'review':second_review['review'],'keys':second_keys}).status_code==201
-        register2=client.get(base,timeout=2).json()
-        assert len(register2['groups'])==4 and len(register2['workbooks'])==2
-        ids={w['id'] for w in register2['workbooks']}
-        assert len(ids)==2 and first_id in ids
-        assert all(w['name']=='example-dispatch.csv' and w['count']==2 for w in register2['workbooks'])
-        assert {r['workbook_id'] for r in register2['groups']}==ids
-        assert all(r['source_batch']==r['workbook_id'] for r in register2['groups'])
-        assert all(r['source_sheet']=='CSV' for r in register2['groups'])
-        # A new workbook with an already-issued LR remains blocked globally.
-        duplicate_upload=post('upload',files={'workbook':('another.xlsx.csv',source)}).json()
-        duplicate_review=post('review',json={'upload':duplicate_upload['upload'],'map':duplicate_upload['map'],'rules':rules}).json()
-        assert duplicate_review['groups'][0]['status']=='issued'
+        # Workspaces track exact issued imports; the recycle bin is a reversible,
+        # authenticated state transition and never exposes its LRs to print routes.
+        original=client.get(base,timeout=2).json()
+        assert len(original['workspaces'])==1 and original['recycle']==[]
+        original_ws=original['workspaces'][0]['id']
+        assert original_ws==u['upload'] and len(original_ws)==32
+        assert all(x['workspace_id']==original_ws for x in original['groups'])
+        # A second upload with the SAME filename gets a completely independent workspace.
+        second=source.replace(b'DEMO-26',b'DEMO-36')
+        u2=post('upload',files={'workbook':('example-dispatch.csv',second)}).json()
+        assert u2['upload']!=u['upload']
+        r2=post('review',json={'upload':u2['upload'],'map':u2['map'],'rules':rules}).json()
+        assert [x['status'] for x in r2['groups']]==['ready','ready','blocked']
+        k2=[x['key'] for x in r2['groups'][:2]]
+        assert post('issue',json={'review':r2['review'],'keys':k2}).status_code==201
+        after_second=client.get(base,timeout=2).json()
+        assert len(after_second['groups'])==4 and len(after_second['workspaces'])==2
+        assert {x['id'] for x in after_second['workspaces']}=={original_ws,u2['upload']}
+        # Moving a workspace requires CSRF, hides its documents, and retains data for restore.
+        assert client.post(base,params={'action':'workspace_trash'},json={'id':u2['upload']},headers={'X-LR-Studio':'1'},timeout=3).status_code==403
+        moved=post('workspace_trash',json={'id':u2['upload']})
+        assert moved.ok and moved.json()['deleted']['count']==2
+        day_30=moved.json()['deleted']['expires_at']
+        assert day_30>moved.json()['deleted']['deleted_at']
+        reduced=client.get(base,timeout=2).json()
+        assert len(reduced['groups'])==2 and len(reduced['workspaces'])==1
+        assert len(reduced['recycle'])==1 and reduced['recycle'][0]['count']==2
+        assert client.get(base,params={'action':'preview','keys':k2[0]},timeout=3).status_code==404
+        assert client.get(base,params={'action':'details','key':k2[0]},timeout=3).status_code==404
+        assert client.get(base,params={'action':'pdf','keys':k2[0]},timeout=3).status_code==404
+        assert post('issue',json={'review':r2['review'],'keys':k2}).status_code==409
+        assert post('workspace_trash',json={'id':u2['upload']}).status_code==409
+        restored=post('workspace_restore',json={'id':u2['upload']})
+        assert restored.ok and restored.json()['restored']['count']==2
+        assert len(client.get(base,timeout=2).json()['groups'])==4
+        assert client.get(base,params={'action':'preview','keys':k2[0]},timeout=3).ok
+        assert post('workspace_trash',json={'id':u2['upload']}).ok
+        assert post('workspace_purge',json={'id':u2['upload']}).json()['purged']['count']==2
+        assert not Path(db,f'upload-{u2["upload"]}.json').exists()
+        assert len(client.get(base,timeout=2).json()['groups'])==2
+        assert client.get(base,timeout=2).json()['recycle']==[]
+        # Permanent delete must not affect another workspace.
+        assert post('workspace_trash',json={'id':original_ws}).ok
+        assert post('recycle_empty',json={}).json()['purged']['count']==2
+        assert client.get(base,timeout=2).json()['groups']==[]
+        assert client.get(base,timeout=2).json()['workspaces']==[]
+        assert client.get(base,timeout=2).json()['recycle']==[]
+        # Emptying an already empty recycle bin is harmless.
+        assert post('recycle_empty',json={}).json()['purged']['count']==0
+        # Expiry is request-driven: on the next authenticated call after the
+        # 30-day deadline, the recycle records disappear automatically.
+        fresh=post('upload',files={'workbook':('again.csv',source)}).json()
+        rv=post('review',json={'upload':fresh['upload'],'map':fresh['map'],'rules':rules}).json()
+        assert post('issue',json={'review':rv['review'],'keys':[rv['groups'][0]['key']]}).ok
+        assert post('workspace_trash',json={'id':fresh['upload']}).ok
+        saved_register=Path(db,'register.json')
+        saved=json.loads(saved_register.read_text())
+        for receipt in saved.values():
+            if 'recycle' in receipt:
+                receipt['recycle']['expires_at']='2001-01-01T00:00:00+00:00'
+        saved_register.write_text(json.dumps(saved))
+        assert client.get(base,timeout=2).json()['recycle']==[]
+        assert client.get(base,timeout=2).json()['groups']==[]
         assert client.post(base,params={'action':'logout'},headers=hdr,json={},timeout=3).json()['signedOut'] is True
         assert client.get(base,params={'action':'session'},timeout=2).status_code==401
         print('PHP smoke test passed: upload, validation, preview, atomic issuance, saved register, duplicate rejection.')

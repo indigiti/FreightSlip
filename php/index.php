@@ -11,6 +11,7 @@ function suggestHeaders(array $sheet):array {
 try {
   $action=$_GET['action']??'register';$method=$_SERVER['REQUEST_METHOD'];
   lrAuthenticate((string)$action,(string)$method);
+  lrRecycleSweep();
   if($method==='POST'){
     // A cross-origin form cannot add this header. No CORS permissions are granted.
     if(($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1')respond(['error'=>'Submit requests through LR Studio.'],403);
@@ -24,8 +25,12 @@ try {
     $p=payload();
     if($action==='suggest')respond(suggestHeaders(draft('upload',$p['upload']??null)));
     if($action==='settings')respond(lrSettingsSave($p));
+    if($action==='workspace_trash')respond(['deleted'=>lrWorkspaceMove($p['id']??null)]);
+    if($action==='workspace_restore')respond(['restored'=>lrWorkspaceRestore($p['id']??null)]);
+    if($action==='workspace_purge')respond(['purged'=>lrWorkspacePurge($p['id']??null)]);
+    if($action==='recycle_empty')respond(['purged'=>lrRecycleEmpty()]);
     if($action==='review'){
-      $settings=lrSettingsRead();$s=draft('upload',$p['upload']??null);$groups=analyze($s,requiredArray($p['map']??null),requiredArray($p['rules']??null),registry(),$settings['settings']);
+      $settings=lrSettingsRead();$s=draft('upload',$p['upload']??null);$groups=analyze($s,requiredArray($p['map']??null),requiredArray($p['rules']??null),registryAll(),$settings['settings']);
       $id=saveDraft('review',['file'=>$s['file'],'sheet'=>$s['sheet'],'upload'=>$p['upload'],'groups'=>$groups]);respond(['review'=>$id,'groups'=>$groups]);
     }
     if($action==='issue'){respond(['groups'=>issue(draft('review',$p['review']??null),requiredArray($p['keys']??null))],201);}
@@ -37,13 +42,7 @@ try {
       header('Content-Type: text/plain; charset=utf-8');echo lrQrText($record,false);exit;
     }
     if($action==='settings')respond(lrSettingsRead());
-    if($action==='register'){
-      $records=registry();
-      $groups=array_reverse(array_values($records));
-      foreach($groups as &$receipt)$receipt['workbook_id']=lrWorkbookId($receipt);
-      unset($receipt);
-      respond(['groups'=>$groups,'workbooks'=>lrWorkbookIndex($records)]);
-    }
+    if($action==='register')respond(lrRegistryResponse());
     if(in_array($action,['preview','pdf'],true)){
       $keys=explode(',',(string)($_GET['keys']??''));if(count($keys)>100 || count(array_unique($keys))!==count($keys))throw new InvalidArgumentException('Select up to 100 distinct receipts.');
       $isDraft=isset($_GET['review']);if($isDraft && ($action==='pdf'||count($keys)!==1))throw new InvalidArgumentException('Drafts can only be previewed one at a time.');
@@ -53,7 +52,7 @@ try {
       if(!in_array($layout,['classic','clean'],true))throw new InvalidArgumentException('Select Classic or Print Clean.');
       $html=receiptHtml($groups,$isDraft,$layout);
       if($action==='preview'){header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'");header('Content-Type: text/html; charset=utf-8');echo $html;exit;}
-      vendor();$opts=new \Dompdf\Options();$opts->set('defaultMediaType','print');$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
+      vendor();$opts=new \Dompdf\Options();$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
     }
   }
   respond(['error'=>'Route not found.'],404);
