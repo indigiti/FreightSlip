@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 function dbRoot():string {
-  $dir=getenv('LR_DATA_DIR');if(!$dir || !str_starts_with($dir,'/')) throw new RuntimeException('Set LR_DATA_DIR to an absolute path outside the web root.');
+  $dir=defined('FREIGHTSLIP_DATA_DIR') ? FREIGHTSLIP_DATA_DIR : getenv('LR_DATA_DIR');if(!is_string($dir) || $dir==='' || !str_starts_with($dir,'/')) throw new RuntimeException('Set LR_DATA_DIR to an absolute path outside the web root.');
   if(!is_dir($dir) && !mkdir($dir,0700,true) && !is_dir($dir))throw new RuntimeException('Cannot create storage.');
   $root=realpath($_SERVER['DOCUMENT_ROOT']??'');$real=realpath($dir);
   if(!$real || ($root && ($root===$real || str_starts_with($real,$root.'/'))))throw new RuntimeException('Storage must be outside the web root.');

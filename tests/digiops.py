@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory() as d:
     storage = private/'storage'; storage.mkdir()
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0)); port=s.getsockname()[1]
-    server=subprocess.Popen(['php','-d','session.save_path=/no-such/php-session-directory',
+    server=subprocess.Popen(['php','-d','disable_functions=putenv','-d','session.save_path=/no-such/php-session-directory',
                              '-S',f'127.0.0.1:{port}','-t',str(host/'public_html')])
     base=f'http://127.0.0.1:{port}/freightslip/'
     api=base+'api/index.php'

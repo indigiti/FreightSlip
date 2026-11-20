@@ -32,7 +32,7 @@ if (preg_match('/^[a-f0-9]{64}$/D', $runtime)) {
 if ($autoload === null) gate(503, 'Matching FreightSlip runtime unavailable. Deploy a package with bundle_runtime enabled.');
 define('FREIGHTSLIP_VENDOR_AUTOLOAD', $autoload);
 // The private HTTP boundary owns login, sessions, CSRF, and all dispatch routes.
-putenv('LR_DATA_DIR='.$storage);
+define('FREIGHTSLIP_DATA_DIR', $storage);
 require $private.'/app/index.php';
 
 } catch (Throwable $error) {
