@@ -28,7 +28,7 @@ export default function Home(){
  useEffect(()=>{if(preview&&!dialog.current?.open)dialog.current?.showModal();},[preview]);
  const invalidate=()=>{setReview(null);setSelection([]);};
  const toggle=(k:string)=>setSelection(old=>old.includes(k)?old.filter(x=>x!==k):old.length<100?[...old,k]:old);
- const run=async(fn:()=>Promise<void>)=>{setBusy(true);setError('');setNote('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Unexpected error.');}finally{setBusy(false);}};
+ const run=async(fn:()=>Promise<unknown>)=>{setBusy(true);setError('');setNote('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Unexpected error.');}finally{setBusy(false);}};
  const loadRegister=async()=>{
   const data=await api<RegisterResponse>('register');
   setRecords(data.groups);setWorkspaces(data.workspaces);setRecycle(data.recycle);
