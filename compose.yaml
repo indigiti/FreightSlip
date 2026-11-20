@@ -1,0 +1,14 @@
+services:
+  studio:
+    build: .
+    ports:
+      - '127.0.0.1:8080:80'
+    environment:
+      LR_DATA_DIR: /var/lib/lr
+      LR_AI_URL: http://assistant:8000
+    volumes:
+      - receipts:/var/lib/lr
+  assistant:
+    build: ./ai
+volumes:
+  receipts:

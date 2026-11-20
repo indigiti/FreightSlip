@@ -1,0 +1,6 @@
+node_modules
+.next
+out
+.git
+php/vendor
+**/__pycache__
