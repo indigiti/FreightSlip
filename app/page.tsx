@@ -1,28 +1,22 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {ArrowDownToLine,ArrowRight,CheckCircle2,ChevronRight,ClipboardList,CloudUpload,Download,FileCheck2,FileSpreadsheet,FileText,LayoutGrid,Layers3,MapPin,Printer,Search,Sparkles,Truck,TriangleAlert,X} from 'lucide-react';
+import {ArrowDownToLine,ArrowRight,CheckCircle2,ChevronRight,ClipboardList,CloudUpload,Download,FileCheck2,FileSpreadsheet,FileText,LayoutGrid,Layers3,MapPin,Printer,Search,Sparkles,Truck,TriangleAlert,LogOut,X} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
+import {BASE,api,url,clearAuth,AuthSession} from '@/lib/api';
 
 type Mapping=Record<string,number>;
 type Upload={upload:string;file:string;sheet:string;sheets:string[];inferred:string[];header:number;headers:string[];rows:number;map:Mapping;fields:Record<string,string>;required:string[];assistant:boolean};
 type Group={id:string;key:string;status:'ready'|'blocked'|'issued';rows:number[];issues:string[];items:unknown[];issued_at?:string;common:{consignee:string;destination:string;date:string|null}};
 type Review={review:string;groups:Group[]};
 type Suggestion={field:string;column:number;score:number};
-const BASE=process.env.NEXT_PUBLIC_BASE_PATH || '';
-const endpoint=process.env.NEXT_PUBLIC_LR_API || `${BASE}/api/index.php`;
-function url(action:string,params:Record<string,string>={}){return `${endpoint}?${new URLSearchParams({action,...params})}`;}
-async function api<T>(action:string,body?:object):Promise<T>{
- const upload=body instanceof FormData;
- const r=await fetch(url(action),body?{method:'POST',headers:{'X-LR-Studio':'1',...(upload?{}:{'Content-Type':'application/json'})},body:upload?body:JSON.stringify(body)}:undefined);
- const v=await r.json().catch(()=>null);if(!r.ok||!v)throw new Error(v?.error||`The PHP API did not return a valid response (${r.status}).`);return v;
-}
 const labels={ready:'Ready',blocked:'Needs review',issued:'Issued'};
 const statusClasses={ready:'bg-emerald-50 text-emerald-800',blocked:'bg-amber-50 text-amber-900',issued:'bg-slate-100 text-slate-700'};
 export default function Home(){
  const [tab,setTab]=useState<'import'|'register'>('register'),[upload,setUpload]=useState<Upload|null>(null),[map,setMap]=useState<Mapping>({}),[review,setReview]=useState<Review|null>(null),[records,setRecords]=useState<Group[]>([]),[selection,setSelection]=useState<string[]>([]),[query,setQuery]=useState(''),[preview,setPreview]=useState<{name:string;url:string}|null>(null);
  const [date,setDate]=useState(''),[override,setOverride]=useState(''),[freight,setFreight]=useState(''),[allowZero,setAllowZero]=useState(false),[header,setHeader]=useState(''),[file,setFile]=useState<File|null>(null),[suggestions,setSuggestions]=useState<Suggestion[]>([]);
  const [printLayout,setPrintLayout]=useState<'classic'|'clean'>('classic');
+ const [currentUser,setCurrentUser]=useState('');const [authReady,setAuthReady]=useState(false);
  const [filter,setFilter]=useState<'all'|'selected'>('all');
  const [error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[drag,setDrag]=useState(false);const picker=useRef<HTMLInputElement>(null),dialog=useRef<HTMLDialogElement>(null);
  useEffect(()=>{if(preview&&!dialog.current?.open)dialog.current?.showModal();},[preview]);
@@ -32,7 +26,8 @@ export default function Home(){
  const loadRegister=async()=>{const data=await api<{groups:Group[]}>('register');setRecords(data.groups);};
  const openRegister=()=>{setSelection([]);setQuery('');setFilter('all');setTab('register');void run(loadRegister);};
  const openImport=()=>{setTab('import');setSelection([]);setError('');setNote('');};
- useEffect(()=>{let live=true;setBusy(true);api<{groups:Group[]}>('register').then(data=>{if(live)setRecords(data.groups);}).catch(e=>{if(live)setError(e instanceof Error?e.message:'Could not load the register.');}).finally(()=>{if(live)setBusy(false);});return()=>{live=false;};},[]);
+ useEffect(()=>{let live=true;setBusy(true);api<AuthSession>('session').then(async info=>{if(!live)return;setCurrentUser(info.username);const data=await api<{groups:Group[]}>('register');if(live){setRecords(data.groups);setAuthReady(true);}}).catch(e=>{if(live && !(e instanceof Error && e.message.includes('Sign in')))setError(e instanceof Error?e.message:'Could not load the register.');}).finally(()=>{if(live)setBusy(false);});return()=>{live=false;};},[]);
+ async function signOut(){try{await api('logout',{});}finally{clearAuth();window.location.assign(`${BASE}/login/`);}}
  async function readWorkbook(source:File, row='', worksheet=''){
   setUpload(null);setMap({});setSuggestions([]);invalidate();
   await run(async()=>{const fd=new FormData();fd.append('workbook',source);fd.append('header',row);fd.append('sheet',worksheet);const u=await api<Upload>('upload',fd);setUpload(u);setMap(u.map);setDate(u.map.lr_date!==undefined?'lr_date':'');setOverride('');setFreight('');setAllowZero(false);});
@@ -48,10 +43,11 @@ export default function Home(){
   {title:'Selected LRs',value:chosen.length,detail:'Ready for batch preview',icon:Layers3,tone:'green'},
   {title:'A4 sheets',value:Math.ceil(chosen.length/2),detail:'Two different LRs per sheet',icon:Printer,tone:'amber'},
  ];
+ if(!authReady)return <main className="flex min-h-screen items-center justify-center bg-[#f7f8fc] p-6"><div role="status" className="rounded-2xl border border-slate-200 bg-white px-8 py-7 text-center text-slate-600 shadow-sm">{error?<><p className="font-semibold text-red-700">{error}</p>{error.includes('auth.json')&&<a href={`${BASE}/setup/`} className="mt-3 block text-violet-700 underline">Set up FreightSlip access</a>}</>:"Checking secure workspace…"}</div></main>;
  return <><div className="studio-shell">
  <aside className="studio-sidebar"><div className="brand"><span className="brand-icon"><Truck size={23}/></span><div><strong>LR Studio</strong><small>Shriram Transport</small></div></div>
  <nav aria-label="Dispatch workspace" className="studio-nav"><span className="nav-caption">WORKSPACE</span><button type="button" className={tab==='register'?'active':''} aria-current={tab==='register'?'page':undefined} disabled={busy} onClick={openRegister}><LayoutGrid size={18}/> LR Register</button><button type="button" className={tab==='import'?'active':''} aria-current={tab==='import'?'page':undefined} disabled={busy} onClick={openImport}><FileSpreadsheet size={18}/> Import Workbook</button></nav>
- <div className="sidebar-footer"><span className="studio-icon violet"><Truck size={17}/></span><div><strong>Shriram Transport</strong><small>Dispatch workspace</small></div></div></aside>
+ <div className="sidebar-footer"><span className="studio-icon violet"><Truck size={17}/></span><div><strong>Shriram Transport</strong><small>{currentUser}</small></div><button type="button" title="Sign out" aria-label="Sign out" onClick={()=>void signOut()} className="ml-auto rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-violet-700"><LogOut size={19}/></button></div></aside>
  <div className="studio-workspace"><header className="studio-topbar"><div className="crumb"><LayoutGrid size={17}/><span>Dispatch workspace</span><ChevronRight size={14}/><strong>{tab==='register'?'LR Register':'Import Workbook'}</strong></div><span className="top-format"><Printer size={15}/> A4 portrait</span></header>
  <main className="studio-main"><section className="studio-heading"><div><p className="eyebrow">DISPATCH DOCUMENTS</p><h1>{tab==='register'?'Lorry Receipt Register':'Import Workbook'}</h1><p>{tab==='register'?'Search issued LRs, preview an A4 sheet, or export a batch.':'Turn dispatch spreadsheets into printable LRs. Verify dates and charges before issuing.'}</p></div><div className="heading-actions"><label className="flex items-center gap-2 text-sm font-medium">Print layout<select className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={printLayout} onChange={e=>setPrintLayout(e.target.value==='clean'?'clean':'classic')}><option value="classic">Classic</option><option value="clean">Print Clean</option></select></label>{tab==='register'?<Button disabled={busy} onClick={openImport}><CloudUpload size={17}/> Import workbook</Button>:<Button variant="outline" disabled={busy} onClick={openRegister}><ClipboardList size={17}/> View register</Button>}</div></section>
  {error&&<div role="alert" className="mt-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900"><TriangleAlert size={18} className="shrink-0"/><div><p>{error}</p>{error.includes('auth.json')&&<p className="mt-2"><a className="font-semibold underline" href={`${BASE}/setup/`}>Create credentials using the secure setup guide</a><span className="ml-2 text-xs">No terminal required · Requires access to Cloudways private files</span></p>}</div></div>}

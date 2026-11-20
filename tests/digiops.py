@@ -45,8 +45,17 @@ with tempfile.TemporaryDirectory() as d:
         hashed=subprocess.check_output(['php','-r','echo password_hash($argv[1], PASSWORD_DEFAULT);',pw],text=True)
         (storage/'auth.json').write_text(json.dumps({'username':'smoke','password_hash':hashed}))
         assert requests.get(api,timeout=5).status_code==401
+        assert 'WWW-Authenticate' not in requests.get(api,timeout=5).headers
         assert requests.get(api,params={'action':'health'},timeout=5).json()=={'status':'ok'}
-        assert requests.get(api,auth=('smoke',pw),timeout=5).json()=={'groups':[]}
+        client=requests.Session()
+        def sign_in(username,password):
+            r=client.post(api,params={'action':'login'},headers={'X-LR-Studio':'1'},
+                          json={'username':username,'password':password},timeout=8)
+            assert r.ok,r.text
+            return r.json()['csrf']
+        csrf=sign_in('smoke',pw)
+        assert client.get(api,timeout=5).json()=={'groups':[]}
+        assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
         # Browser-generated offline PBKDF2 credentials: same input format as Web Crypto.
         salt = bytes(range(16))
         salted = hashlib.pbkdf2_hmac('sha256',pw.encode('utf-8'),salt,600000,dklen=32)
@@ -56,19 +65,26 @@ with tempfile.TemporaryDirectory() as d:
             'hash':base64.b64encode(salted).decode('ascii'),
         }}
         (storage/'auth.json').write_text(json.dumps(wizard_auth))
-        assert requests.get(api,auth=('operator','wrong-password'),timeout=5).status_code==401
-        assert requests.get(api,auth=('operator',pw),timeout=5).json()=={'groups':[]}
+        # Changing credentials invalidates the old session without a browser challenge.
+        assert client.get(api,timeout=5).status_code==401
+        assert client.post(api,params={'action':'login'},headers={'X-LR-Studio':'1'},
+                           json={'username':'operator','password':'wrong-password'},timeout=8).status_code==401
+        csrf=sign_in('operator',pw)
+        assert client.get(api,timeout=5).json()=={'groups':[]}
         assert requests.get(api,params={'action':'health'},timeout=5).json()=={'status':'ok'}
         malformed = {'username':'operator','pbkdf2_sha256':dict(wizard_auth['pbkdf2_sha256'],salt='bad')}
         (storage/'auth.json').write_text(json.dumps(malformed))
         assert requests.get(api,params={'action':'health'},timeout=5).status_code==503
         (storage/'auth.json').write_text(json.dumps(wizard_auth))
         assert requests.get(base+'setup/',timeout=5).ok
+        assert requests.get(base+'login/',timeout=5).ok
         sample = Path('public/example-dispatch.csv')
         with sample.open('rb') as handle:
-            upload = requests.post(api, params={'action':'upload'}, auth=('operator',pw),
-                                   headers={'X-LR-Studio':'1'}, files={'workbook':(sample.name,handle)}, timeout=5)
+            upload = client.post(api, params={'action':'upload'},
+                                   headers={'X-LR-Studio':'1','X-LR-CSRF':csrf}, files={'workbook':(sample.name,handle)}, timeout=5)
         assert upload.ok, upload.text
+        assert client.post(api,params={'action':'logout'},headers={'X-LR-Studio':'1','X-LR-CSRF':csrf},json={},timeout=5).ok
+        assert client.get(api,params={'action':'session'},timeout=5).status_code==401
         if mode == 'update':
             # A versioned install also survives the overlay and works without the legacy vendor path.
             bundled.parent.mkdir()

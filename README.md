@@ -42,6 +42,14 @@ Each receipt QR includes the recorded parties, addresses, destination, date, all
 QR PNGs are generated locally with Composer and PHP GD; no third-party QR API, Python subprocess, or shell access is needed. FastAPI remains optional. If the full payload is too dense for the print box, the app does not truncate it. For issued receipts only, set `LR_QR_DETAILS_ENDPOINT` to the exact HTTPS API endpoint (e.g. `https://your-private-host/lr/api/index.php`, no query string) **only after securing the site and API behind authentication**. The overflow QR then points there, requiring authorized access. Without that setting, an oversized receipt prints an explicit notice, and the complete issued details remain available from the register's Details link. Test a physical A4 print at 100% with your intended scanner or phone app.
 
 
+## Login, sessions, and modular architecture
+
+FreightSlip now has a first-party `/freightslip/login/` screen. It does **not** use HTTP Basic Authentication or `WWW-Authenticate` and will not show the browser credential popup. Enter the administrator username/password from your existing private `storage/auth.json`, then the PHP API creates an HttpOnly, SameSite=Lax session cookie (Secure for HTTPS hosts). The dashboard checks `/api/index.php?action=session` before fetching dispatch data. Sign out from the sidebar. Mutating requests use an in-memory CSRF token and a same-origin request header; an expired session requires signing in again. Cookies expire after 8 hours of inactivity or 24 hours total, with session IDs rotated on login. Failed logins are rate-limited using short-lived, private server-side files. Existing `password_hash` and PBKDF2 setup credentials work without migration. Previously configured usernames with punctuation continue to work; **new** wizard usernames accept 3–64 letters and digits only.
+
+PHP modules remain separated: `http.php` (request/JSON transport), `auth.php` (authentication, sessions, CSRF), `storage.php` (private JSON persistence), `import.php` (Excel/CSV adapters), `domain.php` (validation/issuance rules), `receipt.php` and `receipt-clean.php` (A4 layout), and `qr.php` (QR content). Next.js exports only static UI and uses `lib/api.ts` for session-aware calls; the host runs no Node server. FastAPI remains optional. The session lock is released before large Excel/PDF jobs so concurrent requests do not block unnecessarily. Changes to credentials invalidate existing sessions automatically.
+
+**For Cloudways:** keep `private_html/freightslip/storage/auth.json` in place when upgrading. Install the new slim DigiOps artifact as a normal overlay. After deployment, visit `/freightslip/login/`, not `/freightslip/api/index.php` for sign-in. Never commit private credentials or put them in `public_html`. The health endpoint is intentionally independent of the login session, but returns HTTP 503 until the runtime, credentials and storage are ready. Enable HTTPS; the app must be loaded over HTTPS outside localhost. For high availability/multiple PHP servers, JSON storage and PHP sessions would need a shared transactional store; this single-server Cloudways build does not claim horizontal scalability.
+
 ## DigiOps / Cloudways staging
 
 The main branch workflow builds a static Next.js export for `/freightslip/` and publishes
@@ -68,8 +76,7 @@ via SFTP (or the host file manager). The PHP user must be able to read it and wr
 folder. Use `{"username":"operator","password_hash":"<password_hash generated locally>"}`.
 Generate the hash locally using PHP `password_hash()` with `PASSWORD_DEFAULT`; do not commit
 or upload a plaintext password. The register, upload, issuance, preview, PDF, and details
-routes fail closed without valid configuration. Sign in via `/freightslip/api/index.php`
-and then open the dashboard. Keep HTTPS enabled. The `storage/` folder is persistent across releases.
+routes fail closed without valid configuration. Sign in via `/freightslip/login/` and then open the dashboard. Keep HTTPS enabled. The `storage/` folder is persistent across releases.
 
 DigiOps can check `/freightslip/` for dashboard availability. Separately check
 `/freightslip/api/index.php?action=health` for PHP extensions, private auth configuration,

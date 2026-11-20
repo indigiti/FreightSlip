@@ -20,7 +20,7 @@ export default function PrivateCredentialsSetup(){
   const [working,setWorking]=useState(false);
   async function generate(e:React.FormEvent<HTMLFormElement>){
     e.preventDefault();setError('');setSaved(false);
-    if(!/^[A-Za-z0-9._-]{3,64}$/.test(username)){setError('Username must contain 3–64 letters, numbers, periods, underscores or hyphens.');return;}
+    if(!/^[A-Za-z0-9]{3,64}$/.test(username)){setError('Use 3–64 letters and numbers only.');return;}
     if(password.length<14){setError('Use a unique password of at least 14 characters.');return;}
     if(password!==confirm){setError('The passwords do not match.');return;}
     if(!globalThis.crypto?.subtle){setError('Use HTTPS or a secure local browser to generate credentials.');return;}

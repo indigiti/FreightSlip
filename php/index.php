@@ -1,10 +1,6 @@
 <?php
 declare(strict_types=1);
-require __DIR__.'/domain.php';require __DIR__.'/storage.php';require __DIR__.'/import.php';require __DIR__.'/receipt.php';require __DIR__.'/qr.php';
-header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');header('Referrer-Policy: no-referrer');
-function respond(array $data,int $code=200):never {http_response_code($code);header('Content-Type: application/json; charset=utf-8');echo json_encode($data,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);exit;}
-function requiredArray(mixed $x):array {if(!is_array($x))throw new InvalidArgumentException('Expected an array or object.');return $x;}
-function payload():array {$s=file_get_contents('php://input',false,null,0,65537);if(strlen($s)>65536)throw new InvalidArgumentException('Request too large.');return requiredArray(json_decode($s,true,32,JSON_THROW_ON_ERROR));}
+require __DIR__.'/http.php';require __DIR__.'/domain.php';require __DIR__.'/storage.php';require __DIR__.'/auth.php';require __DIR__.'/import.php';require __DIR__.'/receipt.php';require __DIR__.'/qr.php';
 function suggestHeaders(array $sheet):array {
   $url=getenv('LR_AI_URL');if(!$url)throw new DomainException('Mapping assistant is disabled. Select columns manually.');
   $body=json_encode(['headers'=>$sheet['headers'],'fields'=>array_map(fn($s)=>array_slice($s,0),FIELDS),'mapped'=>(object)known($sheet['headers'])],JSON_THROW_ON_ERROR);
@@ -14,6 +10,7 @@ function suggestHeaders(array $sheet):array {
 }
 try {
   $action=$_GET['action']??'register';$method=$_SERVER['REQUEST_METHOD'];
+  lrAuthenticate((string)$action,(string)$method);
   if($method==='POST'){
     // A cross-origin form cannot add this header. No CORS permissions are granted.
     if(($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1')respond(['error'=>'Submit requests through LR Studio.'],403);
@@ -48,7 +45,7 @@ try {
       if(!in_array($layout,['classic','clean'],true))throw new InvalidArgumentException('Select Classic or Print Clean.');
       $html=receiptHtml($groups,$isDraft,$layout);
       if($action==='preview'){header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'");header('Content-Type: text/html; charset=utf-8');echo $html;exit;}
-      vendor();$opts=new \Dompdf\Options();$opts->set('defaultMediaType','print');$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
+      vendor();$opts=new \Dompdf\Options();$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
     }
   }
   respond(['error'=>'Route not found.'],404);
