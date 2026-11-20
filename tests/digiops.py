@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory() as d:
         csrf=sign_in('smoke',pw)
         assert (storage/'sessions').is_dir()
         assert list((storage/'sessions').glob('sess_*')), 'PHP session was not stored in private storage'
-        assert client.get(api,timeout=5).json()=={'groups':[]}
+        assert client.get(api,timeout=5).json()=={'groups':[],'workbooks':[]}
         assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
         # Browser-generated offline PBKDF2 credentials: same input format as Web Crypto.
         salt = bytes(range(16))
