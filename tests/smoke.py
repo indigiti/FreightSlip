@@ -138,6 +138,22 @@ with tempfile.TemporaryDirectory() as db:
         assert 'class="field center bi"' in issued.text
         assert '· 48 L' not in issued.text
         assert 'Ref.No.:' not in issued.text or '00010001' in issued.text
+        # The entire consignee stays on the original name line; the
+        # destination belongs beside the baked-in To. label below.
+        assert 'class="field bi classic-consignee"' in issued.text
+        assert 'left:383.91pt;top:106.5pt;width:179pt;' in issued.text
+        assert 'class="field italic classic-to-destination"' in issued.text
+        assert 'left:380.9pt;top:155.5pt;width:179pt;' in issued.text
+        assert 'top:124.1pt;' not in issued.text
+        assert '.classic-consignee,.classic-to-destination,.classic-reference{white-space:nowrap}' in issued.text
+        # Both Ref.No. and its value are now rendered in the same bold-italic
+        # field; the baked original caption is masked before drawing it.
+        assert '<div class="classic-ref-mask" aria-hidden="true"></div>' in issued.text
+        assert 'class="field bi classic-reference"' in issued.text
+        assert '>Ref.No.: 00010001</div>' in issued.text
+        assert 'class="classic-unit-mask"' in issued.text
+        assert issued.text.index('class="classic-unit-mask"')<issued.text.index('class="classic-unit-heading"')
+
 
         assert len(client.get(base,timeout=2).json()['groups'])==2
         # Visual WYSIWYG: editor sample and printed draft must use the SAME
@@ -290,6 +306,10 @@ with tempfile.TemporaryDirectory() as db:
             assert 'K.G./Ltr.' in classic_text
             assert '48 L' in classic_text
             assert 'NANO\nUREA' in classic_text  # 53pt bottom field wraps as before
+            assert 'Ref.No.:' in classic_text
+            assert '00010001' in classic_text
+            assert g[0]['common']['destination'] in classic_text
+
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
             assert all(gp['id'] in page.extract_text() for gp in g[:2])
             clean_pdf=client.get(base,params={'action':'pdf',**clean_params},timeout=30)
