@@ -174,7 +174,10 @@ function lrAuthenticate(string $action,string $method): void {
     if($action==='session' && $method==='GET'){
         if(!lrSignedIn($auth))respond(['authenticated'=>false,'error'=>'Sign in to FreightSlip.'],401);
         respond(['authenticated'=>true,'username'=>$_SESSION['lr_auth']['user'],
-            'role'=>lrCurrentRole(),'workspaces'=>lrCurrentWorkspaces(),'csrf'=>lrCsrf()]);
+            'role'=>lrCurrentRole(),'workspaces'=>lrCurrentWorkspaces(),
+            'print_defaults'=>['layout'=>lrPrintDesignRead()['design']['default_layout'],
+                              'qr'=>lrPrintDesignRead()['design']['default_qr']],
+            'csrf'=>lrCsrf()]);
     }
     if($action==='login' && $method==='POST'){
         if(($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1')respond(['error'=>'Use the FreightSlip sign-in screen.'],403);
@@ -203,7 +206,10 @@ function lrAuthenticate(string $action,string $method): void {
         unset($_SESSION['lr_csrf']);
         lrLoginThrottle($name,false);
         respond(['authenticated'=>true,'username'=>$username,'role'=>$role,
-            'workspaces'=>$isAdmin?[]:$account['workspaces'],'csrf'=>lrCsrf()]);
+            'workspaces'=>$isAdmin?[]:$account['workspaces'],
+            'print_defaults'=>['layout'=>lrPrintDesignRead()['design']['default_layout'],
+                              'qr'=>lrPrintDesignRead()['design']['default_qr']],
+            'csrf'=>lrCsrf()]);
     }
     if(!lrSignedIn($auth))
         respond(['authenticated'=>false,'error'=>'Your session has expired. Sign in again.'],401);
