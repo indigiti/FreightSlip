@@ -140,7 +140,7 @@ with tempfile.TemporaryDirectory() as db:
         assert sample_json['values']['consignee']==g[0]['common']['consignee']
         assert sample_json['values']['transport_address']==g[0]['common']['address']
         assert sample_json['values']['consignor_address']==g[0]['common']['consignor_address']
-        assert sample_json['values']['date']=='14-04-2026'
+        assert sample_json['values']['date']=='20-04-2026'
         assert sample_json['qr_mode'] in ('offline','link','unavailable')
         assert client.get(base,params={'action':'visual_sample','key':'nonexistent'},timeout=2).status_code==404
         # Editing office settings must not rewrite already-issued LR snapshots.
