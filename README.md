@@ -193,3 +193,56 @@ artwork, QR payload contents, and Excel/issuance behavior remain unchanged.
 There is intentionally no unrestricted CSS editor, script injection, drag
 to reposition fields, or custom upload of arbitrary design HTML: these would
 risk printed-field clipping or untrusted content in PDF exports.
+
+
+## Full Visual LR Print Designer (admin only)
+
+Open **Visual Designer** in the administrator sidebar. This is separate from
+**Print Designs**, which remains the simple color/typography settings screen.
+Start a named, *fully editable vector* template from Classic or Print Clean.
+Move and resize data fields, labels, table rectangles, rules, QR placeholders,
+and local PNG/JPEG logos on a 595.27 × 410 pt receipt half. Edit per-field
+font family, size, bold, italic, underline, alignment and color. Use the layers
+list, 2 pt snap grid, keyboard arrow nudges, undo/redo and duplication.
+
+**Save Draft → Preview Saved Draft / PDF Proof → Publish Design.**
+Unsaved canvas edits are not part of a PDF proof. The PHP publish action
+validates field bindings, data limits, QR size, required fields, safe
+geometry, and renders an actual two-different-LRs-per-A4 Dompdf proof.
+Publication is blocked if the test PDF has more than one page. Drafts are
+not visible to download-only users. Published templates appear as additional
+options inside Batch Print and honor its QR on/off checkbox.
+
+Templates and published history (up to 20 retained versions per template,
+maximum 20 templates) live in private persistent
+`storage/print-templates.json`. Every mutation uses a file lock, atomic
+write, and revision check. A past published version can be restored to a
+draft for review and republishing; administrators can request a specific
+published version using `template_version` for an authorized proof/reprint.
+The saved LR facts are not modified by template publishing.
+
+The legacy **Classic** (with original preprinted background artwork) and
+**Print Clean** (existing precise PDF geometry) layouts are unchanged. The
+vector starter templates *re-create* their basic visual structure with
+editable lines, rectangles, headings, and bound data. They do not pretend
+that text baked into the historical Classic PNG can be moved individually.
+For full layer editing, start from one of the vector templates.
+
+**Security and performance:** The editor is only available to admins.
+PHP never accepts executable HTML/CSS/JS, external images, remote font URLs,
+or arbitrary data bindings. All new designs use allow-listed styling and
+strict geometry constraints. Logos must be PNG/JPEG no larger than 90 KB
+in the UI and are revalidated server-side. The JSON file is persistent and
+outside the web root. No Node or Python runtime is required on Cloudways.
+Existing download-only users may select published layouts only for LRs in
+their authorized workspaces. The server continues to enforce the maximum
+100 LRs per PDF and the two-distinct-LRs-per-A4 printing rule.
+
+**Print proof limitations:** The canvas uses representative sample values.
+Real consignee addresses and multi-row dispatches can be longer. Always
+check the actual PDF proof on representative records before publishing.
+Export-time fitting has an explicit lower bound; if a field cannot fit,
+PDF export fails with a clear error instead of silently clipping data.
+A published template's old versions remain available in the version
+history, but existing printed paper documents or previously downloaded
+PDFs cannot be recalled. Issue records are not retroactively modified.
