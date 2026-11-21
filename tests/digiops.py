@@ -56,6 +56,22 @@ with tempfile.TemporaryDirectory() as d:
         csrf=sign_in('smoke',pw)
         assert client.get(api,timeout=5).json()=={'groups':[],'workspaces':[],'workbooks':[],'recycle':[]}
         assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
+        assert client.get(api,params={'action':'session'},timeout=5).json()['role']=='admin'
+        assert client.get(api,params={'action':'users'},timeout=5).json()['users']==[]
+        created=client.post(api,params={'action':'user_create'},
+                    headers={'X-LR-Studio':'1','X-LR-CSRF':csrf},timeout=5,
+                    json={'username':'reader01','password':'locally-generated-password-12345',
+                          'workspaces':[],'enabled':True})
+        assert created.status_code==201,created.text
+        reader=requests.Session()
+        response=reader.post(api,params={'action':'login'},headers={'X-LR-Studio':'1'},
+                         json={'username':'reader01','password':'locally-generated-password-12345'},timeout=8)
+        assert response.ok and response.json()['role']=='download'
+        assert reader.get(api,timeout=3).json()['workspaces']==[]
+        assert reader.get(api,params={'action':'users'},timeout=3).status_code==403
+        assert reader.post(api,params={'action':'upload'},headers={'X-LR-Studio':'1',
+                         'X-LR-CSRF':response.json()['csrf']},json={},timeout=3).status_code==403
+
         # Browser-generated offline PBKDF2 credentials: same input format as Web Crypto.
         salt = bytes(range(16))
         salted = hashlib.pbkdf2_hmac('sha256',pw.encode('utf-8'),salt,600000,dklen=32)
