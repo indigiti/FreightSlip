@@ -129,6 +129,16 @@ with tempfile.TemporaryDirectory() as db:
         assert post('review',json={**data,'rules':{**rules,'allow_zero':True}}).json()['groups'][2]['status']=='ready'
         issued=client.get(base,params={'action':'preview','keys':g[0]['key']},timeout=2)
         assert issued.ok and 'DRAFT · NOT ISSUED' not in issued.text and '370.00' in issued.text
+        # Classic template: the baked K.G. heading is replaced with K.G./Ltr.,
+        # litre measurements move into that column, and the product stays at
+        # its existing bottom position with bold+italic typography.
+        assert '<div class="classic-unit-heading">K.G./Ltr.</div>' in issued.text
+        assert 'left:339pt;top:229.4pt;width:52pt;font-size:8pt">48 L</div>' in issued.text
+        assert 'left:339pt;top:342.5pt;width:53pt;font-size:8pt">NANO UREA</div>' in issued.text
+        assert 'class="field center bi"' in issued.text
+        assert '· 48 L' not in issued.text
+        assert 'Ref.No.:' not in issued.text or '00010001' in issued.text
+
         assert len(client.get(base,timeout=2).json()['groups'])==2
         # Visual WYSIWYG: editor sample and printed draft must use the SAME
         # saved LR values. No silent truncation to illustrative text.
@@ -276,6 +286,10 @@ with tempfile.TemporaryDirectory() as db:
             pages=PdfReader(BytesIO(pdf.content)).pages
             assert len(pages)==1
             page=pages[0]
+            classic_text=page.extract_text()
+            assert 'K.G./Ltr.' in classic_text
+            assert '48 L' in classic_text
+            assert 'NANO\nUREA' in classic_text  # 53pt bottom field wraps as before
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
             assert all(gp['id'] in page.extract_text() for gp in g[:2])
             clean_pdf=client.get(base,params={'action':'pdf',**clean_params},timeout=30)
