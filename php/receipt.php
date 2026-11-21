@@ -70,10 +70,10 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[])
     // Keep product descriptions under Particulars, never litres.
     if(count($items)>1)$html.=lrText($item['product'],97.49,$y+13,144,8,'italic');
     $html.=lrText($item['qty'],30,234.9+30*$j,62,count($items)>1?13:20,'center');
-    // Print litres in K.G./Ltr. aligned with the corresponding item.
+    // The K.G./Ltr. header supplies the unit: show just the numeric litre value.
     // Preserve both measurements when the Excel row provides kg and litres.
     if($item['litres']!==''){
-      $html.=lrText($item['litres'].' L',339,229.4+30*$j,52,8,'center');
+      $html.=lrText($item['litres'],339,229.4+30*$j,52,8,'center');
       if($item['weight']!=='')$html.=lrText($item['weight'].' kg',339,239.4+30*$j,52,7,'center');
     }elseif(count($items)===1)$html.=lrText($item['weight'],339,229.4,52,8,'center');
     elseif($hasAnyLitres && $item['weight']!=='')
