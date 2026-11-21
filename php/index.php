@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require __DIR__.'/http.php';require __DIR__.'/domain.php';require __DIR__.'/storage.php';require __DIR__.'/settings.php';require __DIR__.'/users.php';require __DIR__.'/auth.php';require __DIR__.'/import.php';require __DIR__.'/receipt.php';require __DIR__.'/qr.php';
+require __DIR__.'/http.php';require __DIR__.'/domain.php';require __DIR__.'/storage.php';require __DIR__.'/settings.php';require __DIR__.'/print-design.php';require __DIR__.'/users.php';require __DIR__.'/auth.php';require __DIR__.'/import.php';require __DIR__.'/receipt.php';require __DIR__.'/qr.php';
 function suggestHeaders(array $sheet):array {
   $url=getenv('LR_AI_URL');if(!$url)throw new DomainException('Mapping assistant is disabled. Select columns manually.');
   $body=json_encode(['headers'=>$sheet['headers'],'fields'=>array_map(fn($s)=>array_slice($s,0),FIELDS),'mapped'=>(object)known($sheet['headers'])],JSON_THROW_ON_ERROR);
@@ -25,6 +25,7 @@ try {
     $p=payload();
     if($action==='suggest')respond(suggestHeaders(draft('upload',$p['upload']??null)));
     if($action==='settings')respond(lrSettingsSave($p));
+    if($action==='print_design'){lrRequireAdmin();respond(lrPrintDesignSave($p));}
      if($action==='user_create'){lrRequireAdmin();respond(['user'=>lrUserCreate($p)],201);}
      if($action==='user_update'){lrRequireAdmin();respond(['user'=>lrUserUpdate($p)]);}
      if($action==='user_delete'){lrRequireAdmin();respond(['deleted'=>lrUserDelete($p)]);}
@@ -46,6 +47,7 @@ try {
       header('Content-Type: text/plain; charset=utf-8');echo lrQrText($record,false);exit;
     }
     if($action==='settings')respond(lrSettingsRead());
+    if($action==='print_design'){lrRequireAdmin();respond(lrPrintDesignRead());}
     if($action==='users'){lrRequireAdmin();respond(lrUserList());}
      if($action==='register'){
        $response=lrRegistryResponse();
@@ -66,11 +68,12 @@ try {
        if($isDraft && ($action==='pdf'||count($keys)!==1))throw new InvalidArgumentException('Drafts can only be previewed one at a time.');
       $records=$isDraft?array_column(draft('review',$_GET['review'])['groups'],null,'key'):registry();$groups=[];
       foreach($keys as $key){if(!isset($records[$key])||($isDraft&&$records[$key]['status']!=='ready')||(!$isDraft&&!lrWorkspaceAllowed(lrWorkspaceId($records[$key]))))respond(['error'=>'Receipt not found or unavailable.'],404);$groups[]=$records[$key];}
-      $layout=$_GET['layout']??'classic';
+      $savedDesign=lrPrintDesignRead()['design'];
+      $layout=$_GET['layout']??$savedDesign['default_layout'];
       if(!in_array($layout,['classic','clean'],true))throw new InvalidArgumentException('Select Classic or Print Clean.');
-      $qr=$_GET['qr']??'1';
+      $qr=$_GET['qr']??($savedDesign['default_qr']?'1':'0');
        if(!in_array($qr,['0','1'],true))throw new InvalidArgumentException('Select a valid QR printing option.');
-       $html=receiptHtml($groups,$isDraft,$layout,$qr==='1');
+       $html=receiptHtml($groups,$isDraft,$layout,$qr==='1',$savedDesign[$layout]);
       if($action==='preview'){header("Content-Security-Policy: default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'");header('Content-Type: text/html; charset=utf-8');echo $html;exit;}
       vendor();$opts=new \Dompdf\Options();$opts->set('defaultMediaType','print');$opts->set('isRemoteEnabled',false);$opts->set('isPhpEnabled',false);$opts->set('isJavascriptEnabled',false);$pdf=new \Dompdf\Dompdf($opts);$pdf->setPaper('A4','portrait');$pdf->loadHtml($html,'UTF-8');$pdf->render();$pdf->stream(count($groups)===1?'LR-'.$groups[0]['id'].'.pdf':'LR-Batch.pdf',['Attachment'=>true]);exit;
     }

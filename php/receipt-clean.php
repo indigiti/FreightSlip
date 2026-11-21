@@ -1,17 +1,22 @@
 <?php
 declare(strict_types=1);
 
-function lrCleanHalf(array $entry, bool $draft, bool $lower, array $qr): string {
+function lrCleanHalf(array $entry, bool $draft, bool $lower, array $qr,array $design=[]): string {
     [$g,$items,$index,$count]=$entry;
     $c=$g['common']; [$base,$total]=lrAmounts($c);
+    $shade=$design['shade']??'#f5f5f5';
+    $strong=($design['border']??'standard')==='strong';
+    $stroke=$strong?'#222222':'#606060';
+    $thin=$strong?'.65':'.45';
+    $heavy=$strong?'.85':'.65';
     $t='lrText';
     $box=static function($x,$y,$w,$h,$css): string {
         return '<div aria-hidden="true" style="position:absolute;left:'.$x.'pt;top:'.$y.'pt;width:'.$w.'pt;height:'.$h.'pt;'.$css.'"></div>';
     };
-    $h=static fn($x,$y,$w,$heavy=false)=>$box($x,$y,$w,0,'border-top:'.($heavy?'.65':'.45').'pt solid #606060');
-    $v=static fn($x,$y,$height)=>$box($x,$y,0,$height,'border-left:.45pt solid #606060');
+    $h=static fn($x,$y,$w,$heavyLine=false)=>$box($x,$y,$w,0,'border-top:'.($heavyLine?$heavy:$thin).'pt solid '.$stroke);
+    $v=static fn($x,$y,$height)=>$box($x,$y,0,$height,'border-left:'.$thin.'pt solid '.$stroke);
     $html='<div class="half clean'.($lower?' lower':'').'">';
-    $html.=$box(27,181,541,24,'background:#f5f5f5').$box(393,330,175,30,'background:#f5f5f5');
+    $html.=$box(27,181,541,24,'background:'.$shade).$box(393,330,175,30,'background:'.$shade);
     foreach([96,163,181,205,360,406] as $y)$html.=$h(27,$y,541,true);
     foreach([27,93,334,393,485,568] as $x)$html.=$v($x,181,179);
     foreach([245,260,274,288,302,316,330] as $y)$html.=$h(393,$y,175);
@@ -20,7 +25,7 @@ function lrCleanHalf(array $entry, bool $draft, bool $lower, array $qr): string 
     if(!str_contains($addr,"\n"))$addr=lrWrap($addr,66);
     $from=preg_split('/\R/u',trim($c['consignor_address']),2);
     if(count($from)===1)$from=explode("\n",lrWrap($from[0],57),2);
-    $html.=$t($c['carrier'],101,33,300,21,'bold center').$t($addr,100,60,300,8.3,'center');
+    $html.=$t($c['carrier'],101,33,300,$design['header_pt']??21,'bold center lr-brand').$t($addr,100,60,300,8.3,'center');
     $html.=$t('LR No.',409,44,49,9).$t($g['id'],454,39,96,14,'right bold').$t('Date',409,64,45,9).$t(date('d-m-Y',strtotime($c['date'])),455,63,95,10,'right');
     $html.=$t('CONSIGNOR M/S.',28,101,265,8,'bold muted').$t('CONSIGNEE M/S.',307,101,251,8,'bold muted');
     $html.=$t(lrWrap($c['company'],51),28,114,265,10,'bold').$t(lrWrap($c['consignee'],46),307,114,251,10,'bold');
@@ -53,6 +58,6 @@ function lrCleanHalf(array $entry, bool $draft, bool $lower, array $qr): string 
     if($qr['png']){
         $label=$qr['mode']==='link'?'Scan for LR details online':'Scan for LR details';
         $html.='<img class="lr-qr" alt="'.e($label).'" src="data:image/png;base64,'.$qr['png'].'">'.$t($label,241,349,86,6,'center');
-    }else $html.=$t("Full LR exceeds print QR capacity.\nView details in the LR register.",241,307,86,7,'center');
+    }elseif(($qr['mode']??'')!=='off')$html.=$t("Full LR exceeds print QR capacity.\nView details in the LR register.",241,307,86,7,'center');
     return $html.'</div>';
 }

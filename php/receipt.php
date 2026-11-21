@@ -26,7 +26,7 @@ function lrWrap(string $s,int $chars):string {
   preg_match('/^(.{1,'.$chars.'})\s+(.+)$/u',$s,$m);
   return isset($m[2])?$m[1]."\n".$m[2]:$s;
 }
-function lrHalf(array $entry,bool $draft,bool $lower,array $qr):string {
+function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[]):string {
   [$g,$items,$i,$n]=$entry;$c=$g['common'];$last=$i===$n-1;
   [$base,$total]=lrAmounts($c);
   $carrier=$c['carrier'];$addr=trim($c['address']);
@@ -34,7 +34,7 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr):string {
   $from=preg_split('/\R/u',trim($c['consignor_address']),2);if(count($from)===1)$from=explode("\n",lrWrap($from[0],54),2);
   $date=$c['date']?date('d-m-Y',strtotime($c['date'])):'';
   $html='<div class="half'.($lower?' lower':'').'">';
-  $html.=lrText($carrier,106,34.5,304,20,'center').lrText($addr,103,63.8,300,8,'center');
+  $html.=lrText($carrier,106,34.5,304,$design['header_pt']??20,'center lr-brand').lrText($addr,103,63.8,300,8,'center');
   $html.=lrText($g['id'],460.77,51.5,104,11).lrText($date,446.22,73.2,116,10);
   $html.=lrText($c['company'],106.53,106.3,196,8,'bi').lrText($c['consignee'],383.91,106.5,179,10,'bi');
   $html.=lrText($from[0]??'',49.25,124.2,250,8,'bi muted').lrText($from[1]??'',49.25,142.2,250,8,'bi muted').lrText($c['destination'],380.9,124.1,179,10,'italic');
@@ -70,9 +70,13 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr):string {
   }
   return $html.'</div>';
 }
-function receiptHtml(array $groups,bool $draft=false,string $layout='classic',bool $includeQr=true):string {
+function receiptHtml(array $groups,bool $draft=false,string $layout='classic',bool $includeQr=true,array $design=[]):string {
   require_once __DIR__.'/receipt-clean.php';
   $clean=$layout==='clean';
+  if(!$design)$design=LR_PRINT_DESIGN_DEFAULTS[$layout];
+  // These values come from the strict private allow-list validator, not URL query CSS.
+  $accent=$design['accent'];
+  $headingFont=$design['font']==='serif'?'"DejaVu Serif",serif':'Verdana,"DejaVu Sans",sans-serif';
   $render=$clean?'lrCleanHalf':'lrHalf';
   $img='data:image/png;base64,'.base64_encode(file_get_contents(__DIR__.'/assets/lr-half.png'));
   $pages=[];$qr=$includeQr?lrQrImages($groups,$draft):[];
@@ -87,8 +91,9 @@ function receiptHtml(array $groups,bool $draft=false,string $layout='classic',bo
     }
   }
   $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:828pt;background:#fff;overflow:hidden}.sheet.next{page-break-before:always}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
+  $css.='.lr-brand{color:'.$accent.';font-family:'.$headingFont.'}';
   if($clean)$css.='.half.clean{height:410pt;background-image:none;font-family:"DejaVu Sans",sans-serif}.half.clean.lower{top:415.9pt}.bold{font-weight:bold}.clean-cut{position:absolute;top:420.9pt;left:27pt;width:541pt;border-top:.5pt dashed #606060}';
   $html='<!doctype html><html lang="en"><meta charset="utf-8"><title>Lorry receipt · A4 portrait</title><style>'.$css.'</style><body data-layout="'.e($layout).'">';
-  foreach($pages as $i=>[$top,$bottom])$html.='<div class="sheet'.($i>0?' next':'').'">'.$render($top,$draft,false,($includeQr?$qr[$top[0]['key']]:$noQr)).($bottom?($clean?'<div class="clean-cut" aria-hidden="true"></div>':'').$render($bottom,$draft,true,($includeQr?$qr[$bottom[0]['key']]:$noQr)):'').'</div>';
+  foreach($pages as $i=>[$top,$bottom])$html.='<div class="sheet'.($i>0?' next':'').'">'.$render($top,$draft,false,($includeQr?$qr[$top[0]['key']]:$noQr),$design).($bottom?($clean?'<div class="clean-cut" aria-hidden="true"></div>':'').$render($bottom,$draft,true,($includeQr?$qr[$bottom[0]['key']]:$noQr),$design):'').'</div>';
   return $html.'</body></html>';
 }
