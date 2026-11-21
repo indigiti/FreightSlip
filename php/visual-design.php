@@ -204,6 +204,7 @@ function lrVisualMutateAction(string $action,array $payload):array {
       if($check['errors'])throw new InvalidArgumentException(implode(' ',$check['errors']));
       if($check['warnings']&&($payload['confirm_warnings']??false)!==true)
         throw new DomainException(implode(' ',$check['warnings']).' Confirm warnings before publishing.');
+      lrVisualProof($next);
       $version=(int)($template['published']['version']??0)+1;
       $published=['version'=>$version,'name'=>$template['name'],'elements'=>$template['draft'],'published_at'=>gmdate(DATE_ATOM)];
       $template['published']=$published;$template['history'][]=$published;
@@ -329,4 +330,35 @@ function lrVisualHtml(array $groups,bool $draft,array $template,bool $includeQr)
     $html.='</div>';
   }
   return $html.'</body></html>';
+}
+
+/** Validate the real Dompdf output before any draft can become published. */
+function lrVisualProof(array $template):void {
+  vendor();
+  $common=[
+    'carrier'=>'SHRIRAM TRANSPORT',
+    'address'=>'MILKAT 2345, Pune Saswad Road, Uruli Devachi - 412308, Maharashtra',
+    'company'=>'C/O Shriram Enterprises',
+    'consignor_address'=>"Urulidevachi, Pune 412308, Maharashtra",
+    'consignee'=>'Example Customer Private Limited',
+    'destination'=>'Pune, Maharashtra',
+    'date'=>'2026-11-21','source_freight'=>245000,'freight_mode'=>'base',
+    'value'=>'','charges'=>['bc'=>5000,'hamali'=>0,'other'=>0,'delivery'=>0,'risk'=>0]
+  ];
+  $item=['product'=>'Packaging materials','qty'=>'12','obd'=>'REF-1001',
+         'ref2'=>'','weight'=>'320','litres'=>''];
+  $groups=[];
+  foreach([1,2] as $i)$groups[]=['id'=>'PROOF-'.$i,'key'=>'proof-'.$i,
+                                    'common'=>$common,'items'=>[$item]];
+  $html=lrVisualHtml($groups,false,$template,false);
+  $opts=new \Dompdf\Options();
+  $opts->set('defaultMediaType','print');
+  $opts->set('isRemoteEnabled',false);
+  $opts->set('isPhpEnabled',false);
+  $opts->set('isJavascriptEnabled',false);
+  $pdf=new \Dompdf\Dompdf($opts);
+  $pdf->setPaper('A4','portrait');
+  $pdf->loadHtml($html,'UTF-8');$pdf->render();
+  if($pdf->getCanvas()->get_page_count()!==1)
+    throw new DomainException('PDF proof failed: two different LRs do not fit one A4 sheet. Adjust your design before publishing.');
 }
