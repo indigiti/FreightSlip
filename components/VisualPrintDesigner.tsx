@@ -37,9 +37,9 @@ const copy=<T,>(x:T):T=>JSON.parse(JSON.stringify(x)) as T;
 const round=(v:number)=>Math.round(v*2)/2;
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const uniqueId=()=>`layer-${Math.random().toString(36).slice(2,10)}`;
-const blank=(kind:Kind,extra:Partial<VisualLayer>={}):VisualLayer=>({id:uniqueId(),kind,x:90,y:210,w:150,h:23,size:10,font:'sans',bold:false,italic:false,
+const blank=(kind:Kind,extra:Partial<VisualLayer>={}):VisualLayer=>({id:uniqueId(),kind,x:kind==='qr'?265:90,y:kind==='qr'?285:210,w:kind==='qr'?84:kind==='line'||kind==='rect'?180:150,h:kind==='qr'?84:kind==='rect'?55:kind==='line'?1:23,size:10,font:'sans',bold:false,italic:false,
  underline:false,align:'left',color:'#111827',fill:'#f1f5f9',stroke:'#64748b',strokeWidth:.6,text:'New label',binding:'consignee',data:'',
- ...(kind==='line'?{w:180,h:1}:kind==='rect'?{w:180,h:55}:kind==='qr'?{w:84,h:84,x:265,y:285}:{}),...extra});
+ ...extra});
 function layerName(layer:VisualLayer):string{return layer.kind==='field'?(bindings.find(([id])=>id===layer.binding)?.[1]??layer.binding):
  layer.kind==='text'?layer.text.slice(0,32)||'Text':layer.kind==='rect'?'Rectangle':layer.kind==='line'?'Line':layer.kind==='qr'?'QR code':'Image / Logo';}
 function layerErrors(layers:VisualLayer[]):Validation{
@@ -120,7 +120,7 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
  const deleteDraft=async()=>{if(!current||current.published||!window.confirm('Permanently delete this unpublished draft?'))return;
   const saved=await mutate('visual_delete',{id:activeId});if(saved)setNote('Draft deleted.');
  };
- const preview=(pdf=false,published=false)=>{
+ const preview=(pdf=false)=>{
   if(!current||!sampleKey){setError('Issue an LR first so the renderer has real data for the proof.');return;}
   if(dirty&&!published){setError('Save your draft before opening a full-size proof.');return;}
   const params={layout:`visual:${activeId}`,keys:sampleKey,qr:'1',template_draft:'1'};
@@ -252,7 +252,7 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
      {!selection?<p className="mt-3 text-xs text-slate-500">Select a layer on the canvas or in the layer list. Every text field is independently movable and formattable.</p>:<div className="mt-3 space-y-3">
       <div className="flex items-center justify-between gap-2"><p className="min-w-0 truncate text-xs font-bold">{layerName(selection)}</p><div className="flex gap-1"><Tool icon={ArrowUp} label="Bring forward" onClick={()=>reorder(1)}/><Tool icon={ArrowDown} label="Send backward" onClick={()=>reorder(-1)}/></div></div>
       <div className="grid grid-cols-2 gap-2">{(['x','y','w','h'] as const).map(prop=><label key={prop} className="grid gap-1 text-xs font-semibold uppercase text-slate-600">{prop} (pt)
-       <input type="number" min={prop==='w'||prop==='h'?.5:0} max={prop==='x'||prop==='w'?W:H} step="0.5" value={selection[prop]}
+       <input type="number" min={(prop==='w'||prop==='h')?0.5:0} max={prop==='x'||prop==='w'?W:H} step="0.5" value={selection[prop]}
         onChange={e=>change(selection,{[prop]:Number(e.target.value)} as Partial<VisualLayer>)} className="w-full min-w-0 rounded-lg border border-slate-300 p-2 text-sm"/></label>)}</div>
       {selection.kind==='field'&&<label className="grid gap-1 text-xs font-semibold">LR data binding
        <select value={selection.binding} onChange={e=>change(selection,{binding:e.target.value})} className="rounded-lg border border-slate-300 p-2 text-xs">{bindings.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>}
