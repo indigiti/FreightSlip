@@ -61,3 +61,8 @@ body{min-height:100vh;background:radial-gradient(ellipse at 85% 0%,#eae6fb 0,tra
  .layout-choice-desc{font-size:10px}
  .batch-layout-note{width:100%}
 }
+
+/* Optional QR marker in the small Classic and Print Clean selection thumbnails. */
+.layout-mini-qr{position:absolute;right:13px;bottom:8px;width:10px;height:10px;
+ background:repeating-conic-gradient(#2d2937 0 25%,#fff 0 50%) 0 0/4px 4px;
+ border:1px solid #fff;box-shadow:0 0 0 .5px #aaa5b9;pointer-events:none}
