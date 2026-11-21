@@ -224,11 +224,6 @@ with tempfile.TemporaryDirectory() as db:
             assert real_pdf.ok,real_pdf.text[:500] if not real_pdf.ok else ''
             pages=PdfReader(BytesIO(real_pdf.content)).pages
             assert len(pages)==1
-            classic_text=' '.join(page.extract_text() for page in pages)
-            print(repr(classic_text[:600]),flush=True)
-            assert 'K.G./Ltr.' in classic_text
-            assert '48 L' in classic_text and 'NANO UREA' in classic_text
-
             assert all(one['id'] in pages[0].extract_text() for one in g[:2])
         assert post('visual_delete',json={'revision':3,'id':template_id}).status_code==409
         updated_version=json.loads(json.dumps(vt['draft']))
@@ -291,6 +286,9 @@ with tempfile.TemporaryDirectory() as db:
             pages=PdfReader(BytesIO(pdf.content)).pages
             assert len(pages)==1
             page=pages[0]
+            classic_text=page.extract_text()
+            assert 'K.G./Ltr.' in classic_text
+            assert '48 L' in classic_text and 'NANO UREA' in classic_text
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
             assert all(gp['id'] in page.extract_text() for gp in g[:2])
             clean_pdf=client.get(base,params={'action':'pdf',**clean_params},timeout=30)
