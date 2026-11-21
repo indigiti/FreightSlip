@@ -62,7 +62,7 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr):string {
     $label=$qr['mode']==='link'?'Scan for LR details online':'Scan for LR details';
     $html.='<img class="lr-qr" alt="'.e($label).'" src="data:image/png;base64,'.$qr['png'].'">';
     $html.=lrText($label,241,349,86,6,'center');
-  }else $html.=lrText("Full LR exceeds print QR capacity.\nView details in the LR register.",241,307,86,7,'center');
+  }elseif(($qr['mode']??'')!=='off') $html.=lrText("Full LR exceeds print QR capacity.\nView details in the LR register.",241,307,86,7,'center');
   if($last){
     $html.=lrText(money($base),480,222.6,80,11,'right');
     foreach(array_combine(array_keys(CHARGES),[242,259,277.1,295.2,313.2]) as $key=>$y)$html.=lrText(money($c['charges'][$key]),480,$y,80,$key==='bc'?12:9,'right');
@@ -70,12 +70,13 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr):string {
   }
   return $html.'</div>';
 }
-function receiptHtml(array $groups,bool $draft=false,string $layout='classic'):string {
+function receiptHtml(array $groups,bool $draft=false,string $layout='classic',bool $includeQr=true):string {
   require_once __DIR__.'/receipt-clean.php';
   $clean=$layout==='clean';
   $render=$clean?'lrCleanHalf':'lrHalf';
   $img='data:image/png;base64,'.base64_encode(file_get_contents(__DIR__.'/assets/lr-half.png'));
-  $pages=[];$qr=lrQrImages($groups,$draft);
+  $pages=[];$qr=$includeQr?lrQrImages($groups,$draft):[];
+  $noQr=['png'=>null,'mode'=>'off'];
   foreach($groups as $g){
     $chunks=array_chunk($g['items'],4);$n=count($chunks);
     foreach($chunks as $i=>$items){
@@ -88,6 +89,6 @@ function receiptHtml(array $groups,bool $draft=false,string $layout='classic'):s
   $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:828pt;background:#fff;overflow:hidden}.sheet.next{page-break-before:always}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
   if($clean)$css.='.half.clean{height:410pt;background-image:none;font-family:"DejaVu Sans",sans-serif}.half.clean.lower{top:415.9pt}.bold{font-weight:bold}.clean-cut{position:absolute;top:420.9pt;left:27pt;width:541pt;border-top:.5pt dashed #606060}';
   $html='<!doctype html><html lang="en"><meta charset="utf-8"><title>Lorry receipt · A4 portrait</title><style>'.$css.'</style><body data-layout="'.e($layout).'">';
-  foreach($pages as $i=>[$top,$bottom])$html.='<div class="sheet'.($i>0?' next':'').'">'.$render($top,$draft,false,$qr[$top[0]['key']]).($bottom?($clean?'<div class="clean-cut" aria-hidden="true"></div>':'').$render($bottom,$draft,true,$qr[$bottom[0]['key']]):'').'</div>';
+  foreach($pages as $i=>[$top,$bottom])$html.='<div class="sheet'.($i>0?' next':'').'">'.$render($top,$draft,false,($includeQr?$qr[$top[0]['key']]:$noQr)).($bottom?($clean?'<div class="clean-cut" aria-hidden="true"></div>':'').$render($bottom,$draft,true,($includeQr?$qr[$bottom[0]['key']]:$noQr)):'').'</div>';
   return $html.'</body></html>';
 }

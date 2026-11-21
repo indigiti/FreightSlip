@@ -128,3 +128,42 @@ The values are saved in the persistent private file `private_html/freightslip/st
 - Previously issued legacy LRs without recorded upload IDs are grouped by filename and labelled **older import**; multiple historical uploads with the same filename may be grouped together. The UI requires an extra warning before moving a legacy group to Recycle Bin.
 - `storage/auth.json`, `storage/settings.json` and receipts in *other* workspaces are never removed by these operations. The trash and active receipts are part of the persistent `storage/` folder, so the DigiOps slim deployment does not erase them.
 - **Backups are independent**: an external Cloudways or filesystem backup may retain data after a hard delete. Confirm legal/accounting retention requirements before permanently deleting transport records.
+
+## Optional QR codes and download-only workspace accounts
+
+Inside **Batch Print**, administrators and download-only users can select **Classic** or
+**Print Clean** and switch **Include QR Code** on or off. The selection is carried
+through individual LR previews, batch previews, and PDFs. Both A4 layouts still
+put two *different* LRs on each sheet. QR-off skips QR image generation completely,
+including the oversized-code warning; QR-on remains the default for compatibility.
+Direct endpoints accept `qr=1` (default) or `qr=0`; other values are rejected.
+
+The original private `storage/auth.json` account remains the primary administrator.
+Admins can use **Users & Access** to create download-only accounts, assign specific
+active workspace IDs, change permissions, disable accounts, reset passwords, and
+delete accounts. Managed accounts use one new private persistent file,
+`storage/users.json`, which stores password hashes (not plaintext) and only the
+`download` role. An empty workspace list confers **no** receipt access.
+
+**Server-side access rules**: a download-only account can read its assigned
+active workspace register rows and view/download those LRs in Classic or Print
+Clean. All draft previews, Excel upload, mapping, review, issuance, Office Settings,
+workspace deletion/restoration/purging, the recycle list, and user management are
+denied by PHP irrespective of the browser UI. Unassigned LR preview, PDF, and
+details URLs return HTTP 404. A batch mixing assigned and unassigned receipt keys
+fails completely; it cannot leak a partially authorized PDF. Removing a workspace
+grant affects the next API request in an existing session. Disabling/deleting an
+account or resetting its password invalidates its session. The admin account is
+not migrated or overwritten.
+
+Download-only accounts **cannot** erase previously downloaded files or take back
+information printed into an offline QR code. Workspaces moved to Recycle Bin are
+hidden for all accounts, including previously assigned download-only users; restored
+workspaces regain their prior assignments unless an administrator changes those
+assignments. Workspace assignments in user records are private, not embedded in
+public static Next.js files. The static frontend runs on Cloudways without a Node
+server; PHP reads permissions from the private JSON record for each request.
+
+These features have regression coverage for QR-off previews/PDFs, user creation,
+password rotation, disabling/deleting accounts, workspace revocation, mixed-workspace
+batch rejection, bypass attempts on privileged endpoints, and DigiOps package modes.
