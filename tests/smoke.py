@@ -34,6 +34,39 @@ with tempfile.TemporaryDirectory() as db:
         csrf=logged.json()['csrf']
         assert client.get(base,params={'action':'session'},timeout=2).json()['username']==username
         hdr={'X-LR-Studio':'1','X-LR-CSRF':csrf}
+        # Print design configuration is versioned, private and admin-only.
+        original_style=client.get(base,params={'action':'print_design'},timeout=3)
+        assert original_style.ok,original_style.text
+        settings=original_style.json()
+        assert settings['version']==0 and settings['design']['default_layout']=='classic'
+        assert settings['design']['default_qr'] is True
+        assert client.post(base,params={'action':'print_design'},
+                    headers={'X-LR-Studio':'1'},json=settings,timeout=3).status_code==403
+        invalid=json.loads(json.dumps(settings['design']))
+        invalid['classic']['header_pt']=90
+        assert client.post(base,params={'action':'print_design'},headers=hdr,
+                    json={'version':0,'design':invalid},timeout=3).status_code==422
+        invalid['classic']['header_pt']=20
+        invalid['classic']['accent']='red;page-break-before:always'
+        assert client.post(base,params={'action':'print_design'},headers=hdr,
+                    json={'version':0,'design':invalid},timeout=3).status_code==422
+        editable=json.loads(json.dumps(settings['design']))
+        editable['classic'].update({'header_pt':23,'accent':'#4338ca','font':'serif'})
+        editable['clean'].update({'header_pt':19,'shade':'#ecfdf5','border':'strong'})
+        editable['default_layout']='clean'
+        editable['default_qr']=False
+        updated=client.post(base,params={'action':'print_design'},headers=hdr,
+                    json={'version':0,'design':editable},timeout=3)
+        assert updated.ok and updated.json()['version']==1,updated.text
+        assert client.post(base,params={'action':'print_design'},headers=hdr,
+                    json={'version':0,'design':settings['design']},timeout=3).status_code==409
+        assert client.get(base,params={'action':'session'},timeout=3).json()['print_defaults']=={'layout':'clean','qr':False}
+        assert Path(db,'print-design.json').is_file()
+        # Factory reset retains audit-friendly incremented version and original layout.
+        reset=client.post(base,params={'action':'print_design'},headers=hdr,
+                    json={'version':1,'design':settings['design']},timeout=3)
+        assert reset.ok and reset.json()['version']==2
+        assert client.get(base,params={'action':'session'},timeout=3).json()['print_defaults']=={'layout':'classic','qr':True}
         # Office defaults come from authenticated private settings, not from Excel.
         initial=client.get(base,params={'action':'settings'},timeout=2).json()
         assert initial['version']==0
@@ -107,6 +140,25 @@ with tempfile.TemporaryDirectory() as db:
         layout=client.get(base,params={'action':'preview','keys':','.join(j['keys'])},timeout=2)
         assert layout.ok and layout.text.count('<div class="sheet')==1 and layout.text.count('<div class="half')==2
         assert all(layout.text.count(x['id'])==1 for x in g[:2])
+        style_config=client.get(base,params={'action':'print_design'},timeout=2).json()
+        design=json.loads(json.dumps(style_config['design']))
+        design['default_layout']='clean'
+        design['default_qr']=False
+        design['classic'].update({'header_pt':23,'accent':'#4338ca','font':'serif'})
+        design['clean'].update({'header_pt':19,'shade':'#ecfdf5','border':'strong','accent':'#047857'})
+        result=post('print_design',json={'version':style_config['version'],'design':design})
+        assert result.ok,result.text
+        default_preview=client.get(base,params={'action':'preview','keys':g[0]['key']},timeout=3)
+        assert default_preview.ok and 'data-layout="clean"' in default_preview.text
+        assert 'background:#ecfdf5' in default_preview.text
+        assert '#047857' in default_preview.text
+        assert '<img class="lr-qr"' not in default_preview.text
+        custom_classic=client.get(base,params={'action':'preview','keys':g[0]['key'],'layout':'classic','qr':'1'},timeout=3)
+        assert custom_classic.ok and '#4338ca' in custom_classic.text
+        assert 'DejaVu Serif' in custom_classic.text
+        assert custom_classic.text.count('<img class="lr-qr"')==1
+        assert client.get(base,params={'action':'print_design'},timeout=2).json()['version']==3
+        assert post('print_design',json={'version':3,'design':style_config['design']}).ok
         assert issued.text.count('<div class="half')==1
         assert client.get(base,params={'action':'preview','keys':','.join([g[0]['key']]*2)},timeout=2).status_code==422
         qrs=re.findall(r'<img class="lr-qr"[^>]*base64,([^"\s]+)',layout.text)
@@ -203,8 +255,9 @@ with tempfile.TemporaryDirectory() as db:
         assert downloader.get(base,timeout=2).json()['groups']==[]
         assert downloader.get(base,params={'action':'users'},timeout=2).status_code==403
         assert downloader.get(base,params={'action':'settings'},timeout=2).status_code==403
+        assert downloader.get(base,params={'action':'print_design'},timeout=2).status_code==403
         for action in ['upload','review','issue','workspace_trash','workspace_restore',
-                       'workspace_purge','recycle_empty','settings','user_create',
+                       'workspace_purge','recycle_empty','settings','print_design','user_create',
                        'user_update','user_delete','suggest']:
             forbidden=downloader.post(base,params={'action':action},
                         headers={'X-LR-Studio':'1','X-LR-CSRF':download_csrf},
