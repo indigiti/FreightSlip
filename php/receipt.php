@@ -34,6 +34,8 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[])
   $from=preg_split('/\R/u',trim($c['consignor_address']),2);if(count($from)===1)$from=explode("\n",lrWrap($from[0],54),2);
   $date=$c['date']?date('d-m-Y',strtotime($c['date'])):'';
   $html='<div class="half'.($lower?' lower':'').'">';
+  // K.G. is embedded in the Classic form background. Cover only that label.
+  $html.='<div class="classic-unit-heading">K.G./Ltr.</div>';
   $html.=lrText($carrier,106,34.5,304,$design['header_pt']??20,'center lr-brand').lrText($addr,103,63.8,300,8,'center');
   $html.=lrText($g['id'],460.77,51.5,104,11).lrText($date,446.22,73.2,116,10);
   $html.=lrText($c['company'],106.53,106.3,196,8,'bi').lrText($c['consignee'],383.91,106.5,179,10,'bi');
@@ -47,15 +49,22 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[])
     if($j>0)$html.=lrText('Ref.No.:',97.49,$y,41,9,'italic');
     $html.=lrText($item['obd'],139.71,$y,60,10,'italic');
     if($item['ref2']!=='')$html.=lrText('/',202,$y,6,9,'italic').lrText($item['ref2'],211,$y,31,9,'italic');
-    if(count($items)>1 || $item['litres']!=='')$html.=lrText(trim((count($items)>1?$item['product']:'').($item['litres']!==''?' · '.$item['litres'].' L':''),' ·'),97.49,$y+13,144,8,'italic');
+    // Keep product descriptions under Particulars, never litres.
+    if(count($items)>1)$html.=lrText($item['product'],97.49,$y+13,144,8,'italic');
     $html.=lrText($item['qty'],30,234.9+30*$j,62,count($items)>1?13:20,'center');
-    // The original weight box is shallow. Use one subtotal for multiple items, never litres.
-    if(count($items)===1)$html.=lrText($item['weight'],339,229.4,52,8,'center');
+    // Print litres in K.G./Ltr. aligned with the corresponding item.
+    // Preserve both measurements when the Excel row provides kg and litres.
+    if($item['litres']!==''){
+      $html.=lrText($item['litres'].' L',339,229.4+30*$j,52,8,'center');
+      if($item['weight']!=='')$html.=lrText($item['weight'].' kg',339,239.4+30*$j,52,7,'center');
+    }elseif(count($items)===1)$html.=lrText($item['weight'],339,229.4,52,8,'center');
   }
-  if(count($items)>1 && !in_array('',array_column($items,'weight'),true))$html.=lrText((string)array_sum(array_column($items,'weight')),339,229.4,52,8,'center');
+  if(count($items)>1 && !in_array('',array_column($items,'weight'),true)
+     && !array_filter(array_column($items,'litres'),static fn($v)=>$v!==''))
+    $html.=lrText((string)array_sum(array_column($items,'weight')),339,229.4,52,8,'center');
   if(count($items)===1){
     $product=$items[0]['product'];
-    $html.=lrText(lrWrap($product,19),339,342.5,53,8,'center italic');
+    $html.=lrText(lrWrap($product,19),339,342.5,53,8,'center bi');
     if(preg_match_all('/./us',$product)>30)$html.=lrText($product,97.49,251,144,8,'italic');
   }
   if($qr['png']){
@@ -90,7 +99,7 @@ function receiptHtml(array $groups,bool $draft=false,string $layout='classic',bo
       else $pages[]=[$entry,null];
     }
   }
-  $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:828pt;background:#fff;overflow:hidden}.sheet.next{page-break-before:always}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
+  $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:828pt;background:#fff;overflow:hidden}.sheet.next{page-break-before:always}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.classic-unit-heading{position:absolute;left:335pt;top:174pt;width:57pt;height:20pt;line-height:20pt;background:#fff;color:#000;font-size:9pt;text-align:center;white-space:nowrap}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
   $css.='.lr-brand{color:'.$accent.';font-family:'.$headingFont.'}';
   if($clean)$css.='.half.clean{height:410pt;background-image:none;font-family:"DejaVu Sans",sans-serif}.half.clean.lower{top:415.9pt}.bold{font-weight:bold}.clean-cut{position:absolute;top:420.9pt;left:27pt;width:541pt;border-top:.5pt dashed #606060}';
   $html='<!doctype html><html lang="en"><meta charset="utf-8"><title>Lorry receipt · A4 portrait</title><style>'.$css.'</style><body data-layout="'.e($layout).'">';
