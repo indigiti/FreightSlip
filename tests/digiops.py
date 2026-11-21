@@ -58,6 +58,11 @@ with tempfile.TemporaryDirectory() as d:
         assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
         assert client.get(api,params={'action':'session'},timeout=5).json()['role']=='admin'
         assert client.get(api,params={'action':'users'},timeout=5).json()['users']==[]
+        assert client.get(api,params={'action':'visual_public'},timeout=5).json()=={'templates':[]}
+        assert client.get(api,params={'action':'visual_templates'},timeout=5).json()=={'revision':0,'templates':[]}
+        assert (app/'visual-design.php').is_file()
+        assert reader.get(api,params={'action':'visual_public'},timeout=5).status_code==401
+
         created=client.post(api,params={'action':'user_create'},
                     headers={'X-LR-Studio':'1','X-LR-CSRF':csrf},timeout=5,
                     json={'username':'reader01','password':'locally-generated-password-12345',
