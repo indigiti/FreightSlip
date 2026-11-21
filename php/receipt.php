@@ -26,6 +26,16 @@ function lrWrap(string $s,int $chars):string {
   preg_match('/^(.{1,'.$chars.'})\s+(.+)$/u',$s,$m);
   return isset($m[2])?$m[1]."\n".$m[2]:$s;
 }
+// Classic's To. and destination are one text box: one font size and baseline,
+// with italics only on the destination. Keeping it together prevents drift.
+function lrClassicToLine(string $destination):string {
+  $destination=trim((string)preg_replace('/\\s+/u',' ',$destination));
+  $label='To. '.$destination;
+  $html=lrText($label,347.6,164.9,212,10,'classic-to-line');
+  if($destination==='')return $html;
+  return str_replace('>'.e($label).'</div>',
+                     '>To. <em>'.e($destination).'</em></div>',$html);
+}
 function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[]):string {
   [$g,$items,$i,$n]=$entry;$c=$g['common'];$last=$i===$n-1;
   [$base,$total]=lrAmounts($c);
@@ -34,20 +44,18 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[])
   $from=preg_split('/\R/u',trim($c['consignor_address']),2);if(count($from)===1)$from=explode("\n",lrWrap($from[0],54),2);
   $date=$c['date']?date('d-m-Y',strtotime($c['date'])):'';
   $html='<div class="half'.($lower?' lower':'').'">';
-  // The Classic background includes a baked-in K.G. caption. Cover its
-  // lettering before drawing the replacement inside the existing column.
-  $html.='<div class="classic-unit-mask" aria-hidden="true"></div>';
+  // The original To. and K.G. letters were removed from the transparent
+  // Classic artwork. Place the updated heading at the header-cell center.
   $html.='<div class="classic-unit-heading">K.G./Ltr.</div>';
   $html.=lrText($carrier,106,34.5,304,$design['header_pt']??20,'center lr-brand').lrText($addr,103,63.8,300,8,'center');
   $html.=lrText($g['id'],460.77,51.5,104,11).lrText($date,446.22,73.2,116,10);
-  // Fit the entire consignee name on the original name line. The To. label
-  // is baked into the artwork below this block; place the destination beside
-  // that label instead of beneath the consignee.
+  // Keep the consignee name on its own line. The To. and destination below
+  // share one field, font size and baseline; the destination remains italic.
   $html.=lrText($c['company'],106.53,106.3,196,8,'bi')
        .lrText($c['consignee'],383.91,106.5,179,9,'bi classic-consignee');
   $html.=lrText($from[0]??'',49.25,124.2,250,8,'bi muted')
        .lrText($from[1]??'',49.25,142.2,250,8,'bi muted')
-       .lrText($c['destination'],380.9,155.5,179,10,'italic classic-to-destination');
+       .lrClassicToLine($c['destination']);
   $html.=lrText($carrier,432.14,392.6,131,10,'italic');
   if($draft)$html.=lrText('DRAFT · NOT ISSUED',28,371,230,9,'bi muted');
   if($n>1)$html.=lrText('Continuation '.($i+1).' / '.$n,114,342,125,8,'italic');
@@ -111,7 +119,7 @@ function receiptHtml(array $groups,bool $draft=false,string $layout='classic',bo
       else $pages[]=[$entry,null];
     }
   }
-  $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:828pt;background:#fff;overflow:hidden}.sheet.next{page-break-before:always}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.classic-unit-mask{position:absolute;left:346pt;top:178pt;width:43pt;height:16pt;background:#fff}.classic-unit-heading{position:absolute;left:337pt;top:173.5pt;width:55pt;height:16pt;line-height:16pt;background:#fff;color:#000;font-size:9pt;text-align:center;white-space:nowrap}.classic-consignee,.classic-to-destination,.classic-reference{white-space:nowrap}.classic-ref-mask{position:absolute;left:96pt;top:218.5pt;width:146pt;height:15pt;background:#fff}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
+  $css='@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Verdana,"DejaVu Sans",sans-serif}.sheet{position:relative;width:595.27pt;height:828pt;background:#fff;overflow:hidden}.sheet.next{page-break-before:always}.half{position:absolute;left:0;top:0;width:595.27pt;height:420pt;background-image:url("'.$img.'");background-position:0 0;background-repeat:no-repeat;background-size:595.27pt 420pt;print-color-adjust:exact;-webkit-print-color-adjust:exact}.half.lower{top:403.42pt}.lr-qr{position:absolute;left:242pt;top:264pt;width:84pt;height:84pt}.field{position:absolute;line-height:1.13}.classic-unit-heading{position:absolute;left:337.7pt;top:182.7pt;width:56.4pt;height:14pt;line-height:14pt;color:#000;font-size:9pt;text-align:center;white-space:nowrap}.classic-consignee,.classic-to-line,.classic-reference{white-space:nowrap}.classic-to-line{font-style:normal}.classic-to-line em{font-style:italic}.classic-ref-mask{position:absolute;left:96pt;top:218.5pt;width:146pt;height:15pt;background:#fff}.center{text-align:center}.right{text-align:right}.italic,.bi{font-style:italic}.bi{font-weight:bold}.muted{color:#555}@media screen{body{background:#e5e7eb}.sheet{margin:12px auto;box-shadow:0 1px 5px #888}}';
   $css.='.lr-brand{color:'.$accent.';font-family:'.$headingFont.'}';
   if($clean)$css.='.half.clean{height:410pt;background-image:none;font-family:"DejaVu Sans",sans-serif}.half.clean.lower{top:415.9pt}.bold{font-weight:bold}.clean-cut{position:absolute;top:420.9pt;left:27pt;width:541pt;border-top:.5pt dashed #606060}';
   $html='<!doctype html><html lang="en"><meta charset="utf-8"><title>Lorry receipt · A4 portrait</title><style>'.$css.'</style><body data-layout="'.e($layout).'">';
