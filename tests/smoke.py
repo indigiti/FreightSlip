@@ -129,7 +129,7 @@ with tempfile.TemporaryDirectory() as db:
         assert post('issue',json={'review':r['review'],'keys':[g[0]['key'],g[2]['key']]}).status_code==422
         assert client.get(base,timeout=2).json()['groups']==[]
         p=client.get(base,params={'action':'preview','keys':g[0]['key'],'review':r['review']},timeout=2)
-        assert p.ok and p.text.count('DRAFT · NOT ISSUED')==1 and p.text.count('370.00')==1 and '48 L' in p.text
+        assert p.ok and p.text.count('DRAFT · NOT ISSUED')==1 and p.text.count('370.00')==1 and '48 L' not in p.text
         assert p.text.count('<div class="sheet')==1 and 'A4 portrait' in p.text
         if os.environ.get('LR_SAMPLE_HTML'): Path(os.environ['LR_SAMPLE_HTML']).write_text(p.text)
         j={'review':r['review'],'keys':[g[0]['key'],g[1]['key']]}
@@ -143,10 +143,10 @@ with tempfile.TemporaryDirectory() as db:
         # litre measurements move into that column, and the product stays at
         # its existing bottom position with bold+italic typography.
         assert '<div class="classic-unit-heading">K.G./Ltr.</div>' in issued.text
-        assert 'left:339pt;top:229.4pt;width:52pt;font-size:8pt">48 L</div>' in issued.text
+        assert 'left:339pt;top:229.4pt;width:52pt;font-size:8pt">48</div>' in issued.text
         assert 'left:339pt;top:342.5pt;width:53pt;font-size:8pt">NANO UREA</div>' in issued.text
         assert 'class="field center bi"' in issued.text
-        assert '· 48 L' not in issued.text
+        assert '48 L' not in issued.text
         assert 'Ref.No.:' not in issued.text or '00010001' in issued.text
         # The consignee remains on its own line. To. and the actual
         # destination now share one text box, font size and baseline, with
@@ -318,7 +318,7 @@ with tempfile.TemporaryDirectory() as db:
             page=pages[0]
             classic_text=page.extract_text()
             assert 'K.G./Ltr.' in classic_text
-            assert '48 L' in classic_text
+            assert '48' in classic_text and '48 L' not in classic_text
             assert 'NANO\nUREA' in classic_text  # 53pt bottom field wraps as before
             assert 'Ref.No.:' in classic_text
             assert '00010001' in classic_text
