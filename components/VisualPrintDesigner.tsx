@@ -266,15 +266,24 @@ export function VisualPrintDesigner({sampleKey,samples=[],onPublished}:{sampleKe
          {layer.kind==='rect'?<rect x={layer.x} y={layer.y} width={layer.w} height={layer.h} fill={layer.fill} stroke={layer.stroke} strokeWidth={layer.strokeWidth}/>:
           layer.kind==='line'?<line x1={layer.x} y1={layer.y} x2={layer.x+layer.w} y2={layer.y+layer.h} stroke={layer.stroke} strokeWidth={layer.strokeWidth}/>:
           layer.kind==='image'?<image href={layer.data} x={layer.x} y={layer.y} width={layer.w} height={layer.h} preserveAspectRatio="xMidYMid meet"/>:
+          layer.kind==='qr'&&liveSample?
+           (liveSample.qr_png?<image href={`data:image/png;base64,${liveSample.qr_png}`} x={layer.x} y={layer.y} width={layer.w} height={layer.h} preserveAspectRatio="none"/>:
+            <g><rect x={layer.x} y={layer.y} width={layer.w} height={layer.h} fill="#fff7ed" stroke="#b45309"/>
+             <text x={layer.x+layer.w/2} y={layer.y+layer.h/2} textAnchor="middle" fontSize="7" fill="#92400e">QR unavailable</text></g>):
           layer.kind==='qr'?<g><rect x={layer.x} y={layer.y} width={layer.w} height={layer.h} fill="white" stroke="#444" strokeWidth="1"/>
            {[0,1,2].map(n=><rect key={n} x={layer.x+5+(n===1?layer.w-30:0)} y={layer.y+5+(n===2?layer.h-30:0)} width="20" height="20" fill="white" stroke="#111" strokeWidth="3"/>)}
-           <text x={layer.x+layer.w/2} y={layer.y+layer.h-6} textAnchor="middle" fontSize="6">QR PLACEHOLDER</text></g>:
-          <text x={layer.x+(layer.align==='center'?layer.w/2:layer.align==='right'?layer.w:0)} y={layer.y+layer.size}
-           textAnchor={layer.align==='center'?'middle':layer.align==='right'?'end':'start'}
-           fontFamily={layer.font==='serif'?'Georgia,serif':layer.font==='mono'?'monospace':'Arial,sans-serif'} fontSize={layer.size}
-           fontWeight={layer.bold?'bold':'normal'} fontStyle={layer.italic?'italic':'normal'} textDecoration={layer.underline?'underline':'none'} fill={layer.color}>
-           {(displayedText(layer)||' ').split('\n').slice(0,5).map((line,i)=><tspan key={i} x={layer.x+(layer.align==='center'?layer.w/2:layer.align==='right'?layer.w:0)} dy={i===0?0:layer.size*1.2}>{line.length>38?line.slice(0,38)+'…':line}</tspan>)}
-          </text>}
+           <text x={layer.x+layer.w/2} y={layer.y+layer.h-6} textAnchor="middle" fontSize="6">Example QR</text></g>:
+          <foreignObject x={layer.x} y={layer.y} width={layer.w} height={layer.h} style={{overflow:'visible',pointerEvents:'none'}}>
+           <div style={{
+            boxSizing:'border-box',width:'100%',height:'100%',margin:0,padding:0,
+            fontFamily:layer.font==='serif'?'"DejaVu Serif",Georgia,serif':
+              layer.font==='mono'?'"DejaVu Sans Mono",monospace':'"DejaVu Sans",Arial,sans-serif',
+            fontSize:`${Math.round(fittedSize(layer,displayedText(layer))*100)/100}px`,
+            fontWeight:layer.bold?'bold':'normal',fontStyle:layer.italic?'italic':'normal',
+            textDecoration:layer.underline?'underline':'none',textAlign:layer.align,
+            color:layer.color,lineHeight:1.16,whiteSpace:'pre-wrap',overflowWrap:'break-word',overflow:'visible'
+           }}>{displayedText(layer)}</div>
+          </foreignObject>}
          <rect x={layer.x} y={layer.y} width={Math.max(3,layer.w)} height={Math.max(3,layer.h)} fill="transparent" stroke={sel?'#6943ee':'transparent'} strokeWidth={sel?1.4:0} strokeDasharray="3 2"/>
          {sel&&<rect x={layer.x+layer.w-5} y={layer.y+layer.h-5} width="10" height="10" fill="#fff" stroke="#6943ee" strokeWidth="2" cursor="nwse-resize" onPointerDown={e=>begin(e,layer,'resize')}/>}
         </g>;
