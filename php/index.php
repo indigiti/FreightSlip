@@ -52,6 +52,7 @@ try {
     if($action==='settings')respond(lrSettingsRead());
     if($action==='print_design'){lrRequireAdmin();respond(lrPrintDesignRead());}
     if($action==='visual_templates'){lrRequireAdmin();respond(lrVisualAdmin());}
+    if($action==='visual_sample'){lrRequireAdmin();respond(lrVisualSample((string)($_GET['key']??'')));}
     if($action==='visual_public')respond(['templates'=>lrVisualPublic()]);
     if($action==='users'){lrRequireAdmin();respond(lrUserList());}
      if($action==='register'){

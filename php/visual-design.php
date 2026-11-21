@@ -261,6 +261,24 @@ function lrVisualFieldValue(string $binding,array $g,array $items,int $index,int
     'draft_stamp'=>$draft?'DRAFT · NOT ISSUED':'',default=>''
   };
 }
+/**
+ * Return a real issued LR's first-half values for the admin canvas.
+ * The browser never fabricates or truncates this data, so it can compare
+ * its layout with the same saved draft opened via action=preview.
+ */
+function lrVisualSample(string $key):array {
+  $record=registry()[$key]??null;
+  if(!is_array($record))respond(['error'=>'Issued LR not found.'],404);
+  $chunks=array_chunk($record['items'],4);
+  if(!$chunks)throw new InvalidArgumentException('The selected LR contains no items.');
+  $values=[];
+  foreach(LR_VISUAL_BINDINGS as $binding){
+    $values[$binding]=lrVisualFieldValue($binding,$record,$chunks[0],0,count($chunks),false);
+  }
+  $qr=lrQrImages([$record],false)[$key]??['png'=>null,'mode'=>'unavailable'];
+  return ['key'=>$key,'id'=>$record['id'],'values'=>$values,
+          'qr_png'=>$qr['png']??null,'qr_mode'=>$qr['mode']];
+}
 function lrVisualHalf(array $entry,bool $draft,bool $lower,array $qr,array $template):string {
   [$g,$items,$index,$count]=$entry;
   $out='<div class="half visual'.($lower?' lower':'').'">';
@@ -290,7 +308,7 @@ function lrVisualHalf(array $entry,bool $draft,bool $lower,array $qr,array $temp
     $value=$kind==='field'?lrVisualFieldValue($e['binding'],$g,$items,$index,$count,$draft):$e['text'];
     if($value==='')continue;
     $size=(float)$e['size'];$lines=explode("\n",$value);
-    $longest=max(array_map(static fn($s)=>strlen($s),$lines));
+    $longest=max(array_map(static fn($s)=>mb_strlen($s,'UTF-8'),$lines));
     $minByWidth=$w/max(1,$longest)*1.28;
     $minByHeight=$h/max(1,count($lines))/1.22;
     $actual=min($size,$minByWidth,$minByHeight);
