@@ -129,6 +129,16 @@ with tempfile.TemporaryDirectory() as db:
         assert post('review',json={**data,'rules':{**rules,'allow_zero':True}}).json()['groups'][2]['status']=='ready'
         issued=client.get(base,params={'action':'preview','keys':g[0]['key']},timeout=2)
         assert issued.ok and 'DRAFT · NOT ISSUED' not in issued.text and '370.00' in issued.text
+        # Classic template: the baked K.G. heading is replaced with K.G./Ltr.,
+        # litre measurements move into that column, and the product stays at
+        # its existing bottom position with bold+italic typography.
+        assert '<div class="classic-unit-heading">K.G./Ltr.</div>' in issued.text
+        assert 'left:339pt;top:229.4pt;width:52pt;font-size:8pt">48 L</div>' in issued.text
+        assert 'left:339pt;top:342.5pt;width:53pt;font-size:8pt">NANO UREA</div>' in issued.text
+        assert 'class="field center bi"' in issued.text
+        assert '· 48 L' not in issued.text
+        assert 'Ref.No.:' not in issued.text or '00010001' in issued.text
+
         assert len(client.get(base,timeout=2).json()['groups'])==2
         # Visual WYSIWYG: editor sample and printed draft must use the SAME
         # saved LR values. No silent truncation to illustrative text.
@@ -214,6 +224,10 @@ with tempfile.TemporaryDirectory() as db:
             assert real_pdf.ok,real_pdf.text[:500] if not real_pdf.ok else ''
             pages=PdfReader(BytesIO(real_pdf.content)).pages
             assert len(pages)==1
+            classic_text=' '.join(page.extract_text() for page in pages)
+            assert 'K.G./Ltr.' in classic_text
+            assert '48 L' in classic_text and 'NANO UREA' in classic_text
+
             assert all(one['id'] in pages[0].extract_text() for one in g[:2])
         assert post('visual_delete',json={'revision':3,'id':template_id}).status_code==409
         updated_version=json.loads(json.dumps(vt['draft']))
