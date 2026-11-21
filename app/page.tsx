@@ -211,7 +211,7 @@ export default function Home(){
    <div className="flex-1 text-sm font-medium text-violet-950">{exportProgress.completed===exportProgress.total?'Packaging ZIP archive…':`Generating PDF ${exportProgress.completed+1} of ${exportProgress.total}…`}
     <p className="mt-1 text-xs font-normal text-violet-700">{exportProgress.receipts} of {chosen.length} LRs processed</p></div>
    <progress aria-label="Bulk PDF download progress" max={exportProgress.total} value={exportProgress.completed} className="h-2 w-28 accent-violet-600"/>
-   <Button variant="outline" size="sm" onClick={()=>exportAbort.current?.abort()}>Cancel export</Button>
+   <Button variant="outline" className="px-3 py-1.5 text-xs" onClick={()=>exportAbort.current?.abort()}>Cancel export</Button>
   </div>}
  </section></div></>}
   {isAdmin&&tab==='recycle'&&<section className="studio-panel space-y-5 p-5 sm:p-7">
