@@ -37,7 +37,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
           composer install --working-dir=php --no-dev --prefer-dist --no-interaction
-          python -m pip install requests openpyxl pypdf
+          python -m pip install requests openpyxl pypdf pillow
       - name: Check import, issuance and A4 PDF output
         run: |
           find php deploy -path php/vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l

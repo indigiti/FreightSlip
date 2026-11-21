@@ -1,8 +1,18 @@
 from pathlib import Path
 import tempfile, subprocess, time, os, socket, re
 import requests, json, hashlib, base64
+from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
+# The source artwork is the permanent fix: these boxes contain only the old
+# printed To. and K.G. letters, now removed without erasing grid lines.
+classic_art=Image.open(root/'php/assets/lr-half.png').convert('RGBA')
+assert classic_art.size==(2977,2100)
+for box in [(1735,828,1818,873),(1755,930,1866,979)]:
+    assert classic_art.crop(box).getchannel('A').getbbox() is None,box
+for x,y in [(1800,888),(1800,1008),(1688,940),(1974,940)]:
+    assert classic_art.getpixel((x,y))[3]>0,(x,y)
+
 with socket.socket() as s:
     s.bind(('127.0.0.1',0)); port=s.getsockname()[1]
 base=f'http://127.0.0.1:{port}/index.php'
@@ -138,21 +148,25 @@ with tempfile.TemporaryDirectory() as db:
         assert 'class="field center bi"' in issued.text
         assert '· 48 L' not in issued.text
         assert 'Ref.No.:' not in issued.text or '00010001' in issued.text
-        # The entire consignee stays on the original name line; the
-        # destination belongs beside the baked-in To. label below.
+        # The consignee remains on its own line. To. and the actual
+        # destination now share one text box, font size and baseline, with
+        # italics applied only to the destination.
         assert 'class="field bi classic-consignee"' in issued.text
         assert 'left:383.91pt;top:106.5pt;width:179pt;' in issued.text
-        assert 'class="field italic classic-to-destination"' in issued.text
-        assert 'left:380.9pt;top:155.5pt;width:179pt;' in issued.text
+        assert 'class="field classic-to-line"' in issued.text
+        assert 'left:347.6pt;top:164.9pt;width:212pt;' in issued.text
+        assert 'To. <em>'+g[0]['common']['destination']+'</em></div>' in issued.text
+        assert 'classic-to-line em{font-style:italic}' in issued.text
+        assert 'classic-to-destination' not in issued.text
         assert 'top:124.1pt;' not in issued.text
-        assert '.classic-consignee,.classic-to-destination,.classic-reference{white-space:nowrap}' in issued.text
         # Both Ref.No. and its value are now rendered in the same bold-italic
         # field; the baked original caption is masked before drawing it.
         assert '<div class="classic-ref-mask" aria-hidden="true"></div>' in issued.text
         assert 'class="field bi classic-reference"' in issued.text
         assert '>Ref.No.: 00010001</div>' in issued.text
-        assert 'class="classic-unit-mask"' in issued.text
-        assert issued.text.index('class="classic-unit-mask"')<issued.text.index('class="classic-unit-heading"')
+        assert 'classic-unit-mask' not in issued.text
+        assert 'left:337.7pt;top:182.7pt;width:56.4pt;height:14pt' in issued.text
+        assert issued.text.count('<div class="classic-unit-heading">K.G./Ltr.</div>')==1
 
 
         assert len(client.get(base,timeout=2).json()['groups'])==2
@@ -309,6 +323,8 @@ with tempfile.TemporaryDirectory() as db:
             assert 'Ref.No.:' in classic_text
             assert '00010001' in classic_text
             assert g[0]['common']['destination'] in classic_text
+            assert 'To.' in classic_text
+            assert classic_text.count('K.G./Ltr.')==2  # one for each distinct LR
 
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
             assert all(gp['id'] in page.extract_text() for gp in g[:2])
