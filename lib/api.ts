@@ -1,7 +1,7 @@
 // Thin browser transport. Domain processing remains in PHP; no Next.js server is required.
 export const BASE=process.env.NEXT_PUBLIC_BASE_PATH || '';
 const endpoint=process.env.NEXT_PUBLIC_LR_API || `${BASE}/api/index.php`;
-export type AuthSession={authenticated:true;username:string;csrf:string};
+export type AuthSession={authenticated:true;username:string;csrf:string;role:'admin'|'download';workspaces:string[]};
 let csrf='';
 export class ApiError extends Error {
  constructor(message:string,public status:number){super(message);this.name='ApiError';}
