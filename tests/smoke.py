@@ -140,6 +140,81 @@ with tempfile.TemporaryDirectory() as db:
         layout=client.get(base,params={'action':'preview','keys':','.join(j['keys'])},timeout=2)
         assert layout.ok and layout.text.count('<div class="sheet')==1 and layout.text.count('<div class="half')==2
         assert all(layout.text.count(x['id'])==1 for x in g[:2])
+        # Admin visual designer: from a vector starter to a versioned PDF-ready design.
+        assert client.get(base,params={'action':'visual_public'},timeout=2).json()=={'templates':[]}
+        visual=client.get(base,params={'action':'visual_templates'},timeout=2).json()
+        assert visual=={'revision':0,'templates':[]}
+        created=post('visual_create',json={'revision':0,'base':'clean','name':'Dispatch Custom LR'})
+        assert created.ok,created.text
+        visual=created.json()
+        assert visual['revision']==1 and len(visual['templates'])==1
+        vt=visual['templates'][0];template_id=vt['id']
+        assert vt['published'] is None and len(vt['draft'])>=30
+        assert all('id' in layer for layer in vt['draft'])
+        assert client.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                         'keys':g[0]['key']},timeout=5).status_code==422
+        assert client.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                         'keys':g[0]['key'],'template_draft':'1'},timeout=5).ok
+        moved=json.loads(json.dumps(vt['draft']))
+        carrier_field=next(layer for layer in moved if layer['kind']=='field' and layer['binding']=='carrier')
+        carrier_field.update({'x':108,'y':30,'bold':True,'italic':True,'font':'serif','size':22})
+        invalid=json.loads(json.dumps(moved))
+        invalid[0]['x']=590
+        bad=post('visual_save',json={'revision':1,'id':template_id,'name':'Dispatch Custom LR','elements':invalid})
+        assert bad.status_code==422
+        saved=post('visual_save',json={'revision':1,'id':template_id,'name':'Dispatch Custom LR','elements':moved})
+        assert saved.ok,saved.text
+        assert saved.json()['revision']==2
+        stale=post('visual_save',json={'revision':1,'id':template_id,'name':'Lost Edit','elements':moved})
+        assert stale.status_code==409
+        proof=client.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                'keys':','.join(j['keys']),'qr':'0','template_draft':'1'},timeout=5)
+        assert proof.ok,proof.text[:500]
+        assert proof.text.count('class="half visual')==2
+        assert proof.text.count('class="sheet')==1
+        assert 'data-layer="'+carrier_field['id']+'"' in proof.text
+        assert 'font-style:italic' in proof.text
+        assert 'class="vqr"' not in proof.text
+        if os.environ.get('LR_RELEASE_SMOKE'):
+            from pypdf import PdfReader
+            from io import BytesIO
+            proof_pdf=client.get(base,params={'action':'pdf','layout':'visual:'+template_id,
+                      'keys':','.join(j['keys']),'template_draft':'1','qr':'0'},timeout=30)
+            assert proof_pdf.ok,proof_pdf.text[:500] if not proof_pdf.ok else ''
+            assert len(PdfReader(BytesIO(proof_pdf.content)).pages)==1
+        published=post('visual_publish',json={'revision':2,'id':template_id,'confirm_warnings':True})
+        assert published.ok,published.text
+        assert published.json()['revision']==3
+        vt=published.json()['templates'][0]
+        assert vt['published']['version']==1 and len(vt['history'])==1
+        published_list=client.get(base,params={'action':'visual_public'},timeout=2).json()['templates']
+        assert published_list==[{'id':template_id,'name':'Dispatch Custom LR','version':1}]
+        active=client.get(base,params={'action':'preview','layout':'visual:'+template_id,
+               'keys':','.join(j['keys']),'qr':'0'},timeout=5)
+        assert active.ok and active.text.count('class="sheet')==1
+        assert active.text.count('class="half visual')==2
+        assert all(active.text.count(one['id'])==1 for one in g[:2])
+        assert '<img class="vqr"' not in active.text
+        if os.environ.get('LR_RELEASE_SMOKE'):
+            real_pdf=client.get(base,params={'action':'pdf','layout':'visual:'+template_id,
+                      'keys':','.join(j['keys']),'qr':'0'},timeout=30)
+            assert real_pdf.ok,real_pdf.text[:500] if not real_pdf.ok else ''
+            pages=PdfReader(BytesIO(real_pdf.content)).pages
+            assert len(pages)==1
+            assert all(one['id'] in pages[0].extract_text() for one in g[:2])
+        assert post('visual_delete',json={'revision':3,'id':template_id}).status_code==409
+        updated_version=json.loads(json.dumps(vt['draft']))
+        updated_version[0]['text']='SECOND EDITION'
+        assert post('visual_save',json={'revision':3,'id':template_id,
+                    'name':'Dispatch Custom LR','elements':updated_version}).ok
+        assert post('visual_publish',json={'revision':4,'id':template_id,
+                    'confirm_warnings':True}).ok
+        assert client.get(base,params={'action':'visual_public'},timeout=2).json()['templates'][0]['version']==2
+        historical=client.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                  'template_version':'1','keys':g[0]['key'],'qr':'0'},timeout=4)
+        assert historical.ok and 'SECOND EDITION' not in historical.text
+        assert post('visual_revert',json={'revision':5,'id':template_id,'version':1}).ok
+        assert client.get(base,params={'action':'visual_templates'},timeout=3).json()['templates'][0]['draft'][0]['text'] != 'SECOND EDITION'
         style_config=client.get(base,params={'action':'print_design'},timeout=2).json()
         design=json.loads(json.dumps(style_config['design']))
         design['default_layout']='clean'
@@ -256,6 +331,13 @@ with tempfile.TemporaryDirectory() as db:
         assert downloader.get(base,params={'action':'users'},timeout=2).status_code==403
         assert downloader.get(base,params={'action':'settings'},timeout=2).status_code==403
         assert downloader.get(base,params={'action':'print_design'},timeout=2).status_code==403
+        assert downloader.get(base,params={'action':'visual_templates'},timeout=2).status_code==403
+        assert downloader.get(base,params={'action':'visual_public'},timeout=2).json()['templates'][0]['id']==template_id
+        for protected in ['visual_create','visual_save','visual_publish','visual_revert','visual_delete']:
+            assert downloader.post(base,params={'action':protected},
+                  headers={'X-LR-Studio':'1','X-LR-CSRF':download_csrf},
+                  json={'revision':0},timeout=3).status_code==403
+
         for action in ['upload','review','issue','workspace_trash','workspace_restore',
                        'workspace_purge','recycle_empty','settings','print_design','user_create',
                        'user_update','user_delete','suggest']:
@@ -273,6 +355,13 @@ with tempfile.TemporaryDirectory() as db:
         assert len(viewer['groups'])==2 and len(viewer['workspaces'])==1
         assert viewer['workspaces'][0]['id']==original_ws and viewer['recycle']==[]
         assert downloader.get(base,params={'action':'preview','keys':g[0]['key']},timeout=4).ok
+        assert downloader.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                    'keys':g[0]['key'],'qr':'0'},timeout=5).ok
+        assert downloader.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                    'keys':g[0]['key'],'template_draft':'1'},timeout=5).status_code==403
+        assert downloader.get(base,params={'action':'preview','layout':'visual:'+template_id,
+                    'keys':g[0]['key'],'template_version':'1'},timeout=5).status_code==403
+
         assert downloader.get(base,params={'action':'details','key':g[0]['key']},timeout=3).ok
         assert downloader.get(base,params={'action':'pdf','qr':'0',
                           'keys':g[0]['key']},timeout=30).content.startswith(b'%PDF')

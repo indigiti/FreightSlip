@@ -66,3 +66,6 @@ body{min-height:100vh;background:radial-gradient(ellipse at 85% 0%,#eae6fb 0,tra
 .layout-mini-qr{position:absolute;right:13px;bottom:8px;width:10px;height:10px;
  background:repeating-conic-gradient(#2d2937 0 25%,#fff 0 50%) 0 0/4px 4px;
  border:1px solid #fff;box-shadow:0 0 0 .5px #aaa5b9;pointer-events:none}
+
+/* Published visual designs share Batch Print's compact thumbnail controls. */
+.batch-layout-options:has(.layout-choice:nth-child(3)){max-width:100%;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}

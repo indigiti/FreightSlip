@@ -58,6 +58,10 @@ with tempfile.TemporaryDirectory() as d:
         assert client.get(api,params={'action':'session'},timeout=5).json()['authenticated'] is True
         assert client.get(api,params={'action':'session'},timeout=5).json()['role']=='admin'
         assert client.get(api,params={'action':'users'},timeout=5).json()['users']==[]
+        assert client.get(api,params={'action':'visual_public'},timeout=5).json()=={'templates':[]}
+        assert client.get(api,params={'action':'visual_templates'},timeout=5).json()=={'revision':0,'templates':[]}
+        assert (app/'visual-design.php').is_file()
+
         created=client.post(api,params={'action':'user_create'},
                     headers={'X-LR-Studio':'1','X-LR-CSRF':csrf},timeout=5,
                     json={'username':'reader01','password':'locally-generated-password-12345',
@@ -69,6 +73,8 @@ with tempfile.TemporaryDirectory() as d:
         assert response.ok and response.json()['role']=='download'
         assert reader.get(api,timeout=3).json()['workspaces']==[]
         assert reader.get(api,params={'action':'users'},timeout=3).status_code==403
+        assert len(reader.get(api,params={'action':'visual_public'},timeout=3).json()['templates'])==0
+        assert reader.get(api,params={'action':'visual_templates'},timeout=3).status_code==403
         assert reader.post(api,params={'action':'upload'},headers={'X-LR-Studio':'1',
                          'X-LR-CSRF':response.json()['csrf']},json={},timeout=3).status_code==403
 
