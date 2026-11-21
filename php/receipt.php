@@ -43,6 +43,7 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[])
   $html.=lrText($carrier,432.14,392.6,131,10,'italic');
   if($draft)$html.=lrText('DRAFT · NOT ISSUED',28,371,230,9,'bi muted');
   if($n>1)$html.=lrText('Continuation '.($i+1).' / '.$n,114,342,125,8,'italic');
+  $hasAnyLitres=(bool)array_filter(array_column($items,'litres'),static fn($v)=>$v!=='');
   foreach($items as $j=>$item){
     $y=220.5+30*$j;
     // Original form supplies the first Ref.No. label; repeat it only on continuation item rows.
@@ -58,9 +59,11 @@ function lrHalf(array $entry,bool $draft,bool $lower,array $qr,array $design=[])
       $html.=lrText($item['litres'].' L',339,229.4+30*$j,52,8,'center');
       if($item['weight']!=='')$html.=lrText($item['weight'].' kg',339,239.4+30*$j,52,7,'center');
     }elseif(count($items)===1)$html.=lrText($item['weight'],339,229.4,52,8,'center');
+    elseif($hasAnyLitres && $item['weight']!=='')
+      $html.=lrText($item['weight'].' kg',339,229.4+30*$j,52,8,'center');
   }
   if(count($items)>1 && !in_array('',array_column($items,'weight'),true)
-     && !array_filter(array_column($items,'litres'),static fn($v)=>$v!==''))
+     && !$hasAnyLitres)
     $html.=lrText((string)array_sum(array_column($items,'weight')),339,229.4,52,8,'center');
   if(count($items)===1){
     $product=$items[0]['product'];
