@@ -167,3 +167,29 @@ server; PHP reads permissions from the private JSON record for each request.
 These features have regression coverage for QR-off previews/PDFs, user creation,
 password rotation, disabling/deleting accounts, workspace revocation, mixed-workspace
 batch rejection, bypass attempts on privileged endpoints, and DigiOps package modes.
+
+
+## Administrator print designs
+
+The primary administrator has a **Print Designs** sidebar entry. Download-only
+users may select an existing design, but cannot change its settings.
+Classic and Print Clean each expose bounded heading size (17–23 pt), heading
+font (sans/serif), and an approved set of heading colors. Print Clean also
+provides approved section shading and grid stroke weight choices. The admin
+controls the default layout and whether QR codes are initially selected in
+Batch Print. Per-print QR and layout selections still work, including for
+download-only users with permission to see the underlying LRs.
+
+Settings are kept in `private_html/freightslip/storage/print-design.json`
+outside the web root. Changes are validated server-side, saved atomically,
+and versioned to prevent concurrent administrator overwrites. The original
+Classic and Print Clean designs are recoverable using **Restore defaults**.
+A miniature shows proposed edits instantly. A full existing-LR preview opens
+the last **saved** design; unsaved edits must be saved before they appear in a
+real PDF. Changing print styles does not modify immutable issued LR fields.
+
+The two-different-LRs-per-A4 rule, fixed field coordinates, original template
+artwork, QR payload contents, and Excel/issuance behavior remain unchanged.
+There is intentionally no unrestricted CSS editor, script injection, drag
+to reposition fields, or custom upload of arbitrary design HTML: these would
+risk printed-field clipping or untrusted content in PDF exports.
