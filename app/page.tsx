@@ -4,6 +4,7 @@ import {ArrowDownToLine,ArrowRight,CheckCircle2,ChevronRight,ClipboardList,Cloud
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {BASE,api,url,clearAuth,AuthSession} from '@/lib/api';
+import {PDF_BATCH_SIZE,exportPdfBatchesZip,ExportProgress} from '@/lib/batch-export';
 import {AccessManager} from '@/components/AccessManager';
 import {PrintDesignEditor} from '@/components/PrintDesignEditor';
 import {VisualPrintDesigner} from '@/components/VisualPrintDesigner';
@@ -45,10 +46,16 @@ export default function Home(){
  const [currentUser,setCurrentUser]=useState('');const [role,setRole]=useState<'admin'|'download'>('download');const [authReady,setAuthReady]=useState(false);
  const [filter,setFilter]=useState<'all'|'selected'>('all');
  const isAdmin=role==='admin';
+ const [exportProgress,setExportProgress]=useState<ExportProgress|null>(null);
+ const exportAbort=useRef<AbortController|null>(null);
+ const exporting=exportProgress!==null;
  const [error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[drag,setDrag]=useState(false);const picker=useRef<HTMLInputElement>(null),dialog=useRef<HTMLDialogElement>(null);
  useEffect(()=>{if(preview&&!dialog.current?.open)dialog.current?.showModal();},[preview]);
  const invalidate=()=>{setReview(null);setSelection([]);};
- const toggle=(k:string)=>setSelection(old=>old.includes(k)?old.filter(x=>x!==k):old.length<100?[...old,k]:old);
+ const toggle=(k:string)=>{
+  if(exporting)return;
+  setSelection(old=>old.includes(k)?old.filter(x=>x!==k):tab==='register'||old.length<100?[...old,k]:old);
+ };
  const run=async(fn:()=>Promise<unknown>)=>{setBusy(true);setError('');setNote('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Unexpected error.');}finally{setBusy(false);}};
  const loadRegister=async()=>{
   const data=await api<RegisterResponse>('register');
@@ -72,9 +79,38 @@ export default function Home(){
    void run(async()=>{await api('recycle_empty',{});await loadRegister();setNote('Recycle Bin emptied. Workspace LR data was permanently deleted.');});
  };
  const selectAllMatching=(matching:Group[])=>{
-  const keys=matching.slice(0,100).map(g=>g.key);setSelection(keys);setFilter('all');
-  setNote(matching.length>100?`Selected the first 100 of ${matching.length} matching LRs. Export in batches of up to 100 to protect PDF performance.`:`Selected ${keys.length} LRs for A4 PDF export.`);
+  if(exporting)return;
+  const keys=matching.map(g=>g.key);
+  setSelection(keys);setFilter('all');
+  setNote(keys.length>PDF_BATCH_SIZE?`Selected all ${keys.length} LRs. Download as ${Math.ceil(keys.length/PDF_BATCH_SIZE)} PDFs, with up to 100 LRs per file.`:`Selected ${keys.length} LRs for A4 PDF export.`);
  };
+ async function downloadSelectedBatches(){
+  if(exportAbort.current||busy||chosen.length<=PDF_BATCH_SIZE)return;
+  const controller=new AbortController();
+  exportAbort.current=controller;
+  const keys=[...chosen],layout=printLayout,includeQr=printQR;
+  const total=Math.ceil(keys.length/PDF_BATCH_SIZE);
+  setExportProgress({completed:0,total,receipts:0});
+  setError('');setNote('');
+  try{
+   const zip=await exportPdfBatchesZip(keys,layout,includeQr,{
+    signal:controller.signal,onProgress:setExportProgress
+   });
+   if(controller.signal.aborted)return;
+   const href=URL.createObjectURL(zip);
+   const link=document.createElement('a');
+   link.href=href;link.download=`FreightSlip-${keys.length}-LRs-${new Date().toISOString().slice(0,10)}.zip`;
+   document.body.appendChild(link);link.click();link.remove();
+   window.setTimeout(()=>URL.revokeObjectURL(href),60000);
+   setNote(`Generated ${total} PDFs for ${keys.length} LRs (up to 100 in each). ZIP download started.`);
+  }catch(e){
+   if(e instanceof Error&&e.name==='AbortError')setNote('Bulk export canceled. No incomplete ZIP was downloaded.');
+   else setError(e instanceof Error?e.message:'Bulk PDF export failed. No incomplete ZIP was downloaded.');
+  }finally{
+   exportAbort.current=null;
+   setExportProgress(null);
+  }
+ }
 
  const openRegister=()=>{setSelection([]);setQuery('');setFilter('all');setWorkspaceFilter('');setTab('register');void run(loadRegister);};
  const openImport=()=>{setTab('import');setSelection([]);setError('');setNote('');};
@@ -90,7 +126,8 @@ export default function Home(){
  function changeField(k:string,v:string){setMap(m=>{const next={...m};if(v==='')delete next[k];else next[k]=Number(v);return next;});invalidate();}
  const matching=records.filter(g=>(workspaceFilter==='all'||g.workspace_id===workspaceFilter) && [g.id,g.common.consignee,g.common.destination].some(v=>String(v??'').toLowerCase().includes(query.trim().toLowerCase())));
  const shown=tab==='register'?matching.filter(g=>filter==='all'||selection.includes(g.key)):tab==='import'?review?.groups||[]:[];
- const allMatchingSelected=matching.length>0&&matching.slice(0,100).every(g=>selection.includes(g.key));
+ const selectedSet=new Set(selection);
+ const allMatchingSelected=matching.length>0&&matching.every(g=>selectedSet.has(g.key));
  const chosen=tab==='register'?selection:selection.filter(k=>review?.groups.some(g=>g.key===k&&g.status==='ready'));
  function show(g:Group){setPreview({name:g.id,url:url('preview',{layout:printLayout,qr:printQR?'1':'0',keys:g.key,...(tab==='import'&&review?{review:review.review}:{})})});}
  const stats=[
@@ -135,7 +172,7 @@ export default function Home(){
  </section><div className="stats-grid">{stats.map(({title,value,detail,icon:Icon,tone})=><div className="stat-card" key={title}><div className="stat-label"><span className={`studio-icon ${tone}`}><Icon size={17}/></span>{title}</div><strong className="stat-value">{busy&&value===0?'—':value.toLocaleString('en-IN')}</strong><p>{detail}</p></div>)}</div>
  <div className="register-panels"><section className="studio-panel batch-print-panel">
  <div className="panel-heading"><div><h2>Batch print</h2><p>Select issued receipts, choose a design, preview and export.</p></div><span className="format-badge">A4 PORTRAIT</span></div>
- <div className="print-flow"><div><span>01</span><div><strong>Select LRs</strong><small>{chosen.length?`${chosen.length} selected`:'Use the register below'}</small></div></div><ChevronRight size={16}/><div><span>02</span><div><strong>Choose layout</strong><small>{printLayout==='classic'?'Classic':printLayout==='clean'?'Print Clean':visualTemplates.find(t=>`visual:${t.id}`===printLayout)?.name||'Custom'}</small></div></div><ChevronRight size={16}/><div><span>03</span><div><strong>Export PDF</strong><small>{chosen.length?`${Math.ceil(chosen.length/2)} A4 ${Math.ceil(chosen.length/2)===1?'sheet':'sheets'}`:'Print at actual size'}</small></div></div></div>
+ <div className="print-flow"><div><span>01</span><div><strong>Select LRs</strong><small>{chosen.length?`${chosen.length} selected`:'Use the register below'}</small></div></div><ChevronRight size={16}/><div><span>02</span><div><strong>Choose layout</strong><small>{printLayout==='classic'?'Classic':printLayout==='clean'?'Print Clean':visualTemplates.find(t=>`visual:${t.id}`===printLayout)?.name||'Custom'}</small></div></div><ChevronRight size={16}/><div><span>03</span><div><strong>{chosen.length>PDF_BATCH_SIZE?'Batch PDFs (ZIP)':'Export PDF'}</strong><small>{chosen.length?`${Math.ceil(chosen.length/2)} A4 ${Math.ceil(chosen.length/2)===1?'sheet':'sheets'}`:'Print at actual size'}</small></div></div></div>
  <div className="batch-layout-heading"><span>Print design</span><span>Two different LRs per A4 sheet · No duplicate copies</span></div>
  <div className="batch-layout-options" role="group" aria-label="Choose receipt print layout">
   {([['classic','Classic','Original LR format'],['clean','Print Clean','Refined type and spacing']] as const).map(([variant,label,description])=><button key={variant} type="button" className={`layout-choice ${printLayout===variant?'is-selected':''}`} aria-label={`Use ${label} receipt print design`} aria-pressed={printLayout===variant} onClick={()=>setPrintLayout(variant)} disabled={busy}>
@@ -156,7 +193,26 @@ export default function Home(){
     <span className="font-semibold text-slate-800">Include QR Code</span>
     <span className="text-xs text-slate-500">{printQR?'Enabled for both LR halves':'QR codes will be omitted from the PDF'}</span>
    </label>
-  <div className="print-actions"><Button variant="outline" disabled={busy||!chosen.length} onClick={()=>setPreview({name:`${chosen.length} selected LRs`,url:url('preview',{layout:printLayout,qr:printQR?'1':'0',keys:chosen.join(',')})})}><FileText size={16}/> Preview selected</Button>{chosen.length&&!busy?<Button asChild><a href={url('pdf',{layout:printLayout,qr:printQR?'1':'0',keys:chosen.join(',')})}><ArrowDownToLine size={16}/> Download PDF</a></Button>:<Button disabled><ArrowDownToLine size={16}/> Download PDF</Button>}<span className="batch-layout-note">{chosen.length%2===1?'Final sheet: bottom slot blank.':'Print at 100% / actual size.'}</span></div>
+  <div className="print-actions">
+   <Button variant="outline" disabled={busy||exporting||!chosen.length}
+    onClick={()=>setPreview({name:`${Math.min(chosen.length,PDF_BATCH_SIZE)} of ${chosen.length} selected LRs`,url:url('preview',{layout:printLayout,qr:printQR?'1':'0',keys:chosen.slice(0,PDF_BATCH_SIZE).join(',')})})}>
+     <FileText size={16}/> {chosen.length>PDF_BATCH_SIZE?'Preview first 100':'Preview selected'}
+   </Button>
+   {chosen.length>PDF_BATCH_SIZE?
+     <Button disabled={busy||exporting} onClick={()=>void downloadSelectedBatches()}>
+      <ArrowDownToLine size={16}/> Download {Math.ceil(chosen.length/PDF_BATCH_SIZE)} PDFs (ZIP)
+     </Button>
+    :chosen.length&&!busy&&!exporting?
+     <Button asChild><a href={url('pdf',{layout:printLayout,qr:printQR?'1':'0',keys:chosen.join(',')})}><ArrowDownToLine size={16}/> Download PDF</a></Button>
+    :<Button disabled><ArrowDownToLine size={16}/> Download PDF</Button>}
+   <span className="batch-layout-note">{chosen.length>PDF_BATCH_SIZE?`Up to 100 LRs per PDF · ${Math.ceil(chosen.length/PDF_BATCH_SIZE)} PDF files in one ZIP`:chosen.length%2===1?'Final sheet: bottom slot blank.':'Print at 100% / actual size.'}</span>
+  </div>
+  {exportProgress&&<div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-violet-200 bg-violet-50 p-3" role="status" aria-live="polite">
+   <div className="flex-1 text-sm font-medium text-violet-950">{exportProgress.completed===exportProgress.total?'Packaging ZIP archive…':`Generating PDF ${exportProgress.completed+1} of ${exportProgress.total}…`}
+    <p className="mt-1 text-xs font-normal text-violet-700">{exportProgress.receipts} of {chosen.length} LRs processed</p></div>
+   <progress aria-label="Bulk PDF download progress" max={exportProgress.total} value={exportProgress.completed} className="h-2 w-28 accent-violet-600"/>
+   <Button variant="outline" size="sm" onClick={()=>exportAbort.current?.abort()}>Cancel export</Button>
+  </div>}
  </section></div></>}
   {isAdmin&&tab==='recycle'&&<section className="studio-panel space-y-5 p-5 sm:p-7">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-bold">Recycle Bin</h2><p className="mt-1 text-sm text-slate-600">Removed workspaces are hidden from the LR register, new PDF exports and online QR details until restored. They are permanently purged on the first authenticated visit after 30 days.</p></div>
@@ -191,7 +247,7 @@ export default function Home(){
   {isAdmin&&tab==='print_design'&&<PrintDesignEditor sampleKey={records[0]?.key} onSaved={d=>{setPrintLayout(d.default_layout);setPrintQR(d.default_qr);}}/>}
   {isAdmin&&tab==='visual_designer'&&<VisualPrintDesigner sampleKey={records[0]?.key} samples={records.slice(0,100).map(g=>({key:g.key,id:g.id}))} onPublished={setVisualTemplates}/>}
 
-  {(tab==='register'||(isAdmin&&tab==='import'&&review))&&<section className="mt-5 rounded-2xl border border-[#e7e6f1] bg-white p-5 sm:p-6"><div className="mb-4 flex flex-wrap justify-between gap-3"><div><h2 className="text-xl font-bold">{tab==='register'?'LR register':'Batch review'}</h2><p className="mt-1 text-sm text-slate-600">{tab==='register'?`${matching.length} in this view · ${chosen.length} selected`:`${shown.filter(g=>g.status==='ready').length} ready · ${shown.filter(g=>g.status==='blocked').length} blocked · ${shown.filter(g=>g.status==='issued').length} previously issued · ${chosen.length} selected`}</p></div><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">Two different LRs per A4 sheet</span>{tab==='register'?<><Button variant="outline" disabled={busy||!matching.length} onClick={()=>allMatchingSelected?(setSelection([]),setNote('Selection cleared.')):selectAllMatching(matching)}>{allMatchingSelected?'Clear all':matching.length>100?`Select first 100 of ${matching.length}`:`Select all ${matching.length}`}</Button><div className="filter-pills" aria-label="Filter receipts"><button type="button" aria-pressed={filter==='all'} onClick={()=>setFilter('all')}>All <span>{matching.length}</span></button><button type="button" aria-pressed={filter==='selected'} onClick={()=>setFilter('selected')}>Selected <span>{chosen.length}</span></button></div><div className="relative"><Search className="absolute left-3 top-3 text-slate-500" size={16}/><Input aria-label="Search receipts" placeholder="Search LR, consignee, town" className="pl-9" value={query} onChange={e=>setQuery(e.target.value)}/></div></>:<><Button variant="outline" disabled={busy||!shown.some(g=>g.status==='ready')} onClick={()=>setSelection(shown.filter(g=>g.status==='ready').slice(0,100).map(g=>g.key))}>Select up to 100 ready</Button><Button disabled={busy||!chosen.length} onClick={()=>{if(!review||!window.confirm(`Issue ${chosen.length} receipt(s)? Issued records are saved and cannot be changed here.`))return;void run(async()=>{await api('issue',{review:review.review,keys:chosen});setReview(old=>old?{...old,groups:old.groups.map(g=>chosen.includes(g.key)?{...g,status:'issued',issues:['Issued. Reprint this receipt from the register.']}:g)}:null);setSelection([]);setNote(`Issued ${chosen.length} receipt(s). Open the register to download PDFs.`);});}}><FileCheck2 size={16}/> Issue selected</Button></>}</div></div>
- <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="register-table w-full text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th scope="col">{tab==='register'?<input type="checkbox" aria-label="Select all matching LRs" checked={allMatchingSelected} disabled={busy||!matching.length} onChange={()=>allMatchingSelected?(setSelection([]),setNote('Selection cleared.')):selectAllMatching(matching)}/>:<span className="sr-only">Select</span>}</th><th scope="col">LR number</th><th scope="col">Consignee / destination</th><th scope="col">Issue date</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>{shown.map(g=><tr className="border-t border-slate-200" key={g.key}><td>{(g.status==='ready'||tab==='register')&&<input type="checkbox" aria-label={`Select ${g.id}`} checked={selection.includes(g.key)} onChange={()=>toggle(g.key)} disabled={busy||(!selection.includes(g.key)&&selection.length>=100)}/>}</td><td className="font-bold whitespace-nowrap">{g.id||'Missing LR No.'}<div className="text-xs font-normal text-slate-500">{tab==='import'?`Rows ${g.rows.join(', ')}`:`${g.items.length} line item(s)`}{tab==='register'&&workspaceFilter==='all'&&g.source_file?<div className="mt-1 max-w-[180px] truncate" title={g.source_file}>{g.source_file}</div>:null}</div></td><td>{g.common.consignee}<div className="text-xs text-slate-500">{g.common.destination}</div></td><td className="whitespace-nowrap">{g.common.date||'—'}</td><td><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${statusClasses[g.status]}`}>{labels[g.status]}</span>{!!g.issues.length&&<details className="mt-2 min-w-28 text-xs"><summary>{g.issues.length} note(s)</summary><ul className="mt-1 list-disc pl-3">{g.issues.map((s,i)=><li key={i}>{s}</li>)}</ul></details>}</td><td className="whitespace-nowrap">{(tab==='register'||g.status==='ready')&&<Button variant="ghost" onClick={()=>show(g)}><FileText size={15}/> Preview</Button>}{tab==='register'&&<Button asChild variant="outline"><a href={url('pdf',{layout:printLayout,qr:printQR?'1':'0',keys:g.key})}><Download size={15}/> PDF</a></Button>}{tab==='register'&&<a className="ml-2 text-xs underline" href={url('details',{key:g.key})} target="_blank" rel="noreferrer">Details</a>}</td></tr>)}{!shown.length&&<tr><td colSpan={6} className="text-center text-slate-600">{busy?'Loading receipts…':error&&tab==='register'?'Register unavailable. Select LR Register to retry.':!records.length&&tab==='register'?(isAdmin?'No issued receipts yet. Import a workbook to get started.':'No LRs in your assigned workspaces.'):'No matching receipts.'}</td></tr>}</tbody></table></div></section>}
+  {(tab==='register'||(isAdmin&&tab==='import'&&review))&&<section className="mt-5 rounded-2xl border border-[#e7e6f1] bg-white p-5 sm:p-6"><div className="mb-4 flex flex-wrap justify-between gap-3"><div><h2 className="text-xl font-bold">{tab==='register'?'LR register':'Batch review'}</h2><p className="mt-1 text-sm text-slate-600">{tab==='register'?`${matching.length} in this view · ${chosen.length} selected`:`${shown.filter(g=>g.status==='ready').length} ready · ${shown.filter(g=>g.status==='blocked').length} blocked · ${shown.filter(g=>g.status==='issued').length} previously issued · ${chosen.length} selected`}</p></div><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">Two different LRs per A4 sheet</span>{tab==='register'?<><Button variant="outline" disabled={busy||exporting||!matching.length} onClick={()=>allMatchingSelected?(setSelection([]),setNote('Selection cleared.')):selectAllMatching(matching)}>{allMatchingSelected?'Clear all':`Select all ${matching.length}`}</Button><div className="filter-pills" aria-label="Filter receipts"><button type="button" aria-pressed={filter==='all'} onClick={()=>setFilter('all')}>All <span>{matching.length}</span></button><button type="button" aria-pressed={filter==='selected'} onClick={()=>setFilter('selected')}>Selected <span>{chosen.length}</span></button></div><div className="relative"><Search className="absolute left-3 top-3 text-slate-500" size={16}/><Input aria-label="Search receipts" placeholder="Search LR, consignee, town" className="pl-9" value={query} onChange={e=>setQuery(e.target.value)}/></div></>:<><Button variant="outline" disabled={busy||!shown.some(g=>g.status==='ready')} onClick={()=>setSelection(shown.filter(g=>g.status==='ready').slice(0,100).map(g=>g.key))}>Select up to 100 ready</Button><Button disabled={busy||!chosen.length} onClick={()=>{if(!review||!window.confirm(`Issue ${chosen.length} receipt(s)? Issued records are saved and cannot be changed here.`))return;void run(async()=>{await api('issue',{review:review.review,keys:chosen});setReview(old=>old?{...old,groups:old.groups.map(g=>chosen.includes(g.key)?{...g,status:'issued',issues:['Issued. Reprint this receipt from the register.']}:g)}:null);setSelection([]);setNote(`Issued ${chosen.length} receipt(s). Open the register to download PDFs.`);});}}><FileCheck2 size={16}/> Issue selected</Button></>}</div></div>
+ <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="register-table w-full text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th scope="col">{tab==='register'?<input type="checkbox" aria-label="Select all matching LRs" checked={allMatchingSelected} disabled={busy||exporting||!matching.length} onChange={()=>allMatchingSelected?(setSelection([]),setNote('Selection cleared.')):selectAllMatching(matching)}/>:<span className="sr-only">Select</span>}</th><th scope="col">LR number</th><th scope="col">Consignee / destination</th><th scope="col">Issue date</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>{shown.map(g=><tr className="border-t border-slate-200" key={g.key}><td>{(g.status==='ready'||tab==='register')&&<input type="checkbox" aria-label={`Select ${g.id}`} checked={selection.includes(g.key)} onChange={()=>toggle(g.key)} disabled={busy||exporting||(tab==='import'&&!selection.includes(g.key)&&selection.length>=100)}/>}</td><td className="font-bold whitespace-nowrap">{g.id||'Missing LR No.'}<div className="text-xs font-normal text-slate-500">{tab==='import'?`Rows ${g.rows.join(', ')}`:`${g.items.length} line item(s)`}{tab==='register'&&workspaceFilter==='all'&&g.source_file?<div className="mt-1 max-w-[180px] truncate" title={g.source_file}>{g.source_file}</div>:null}</div></td><td>{g.common.consignee}<div className="text-xs text-slate-500">{g.common.destination}</div></td><td className="whitespace-nowrap">{g.common.date||'—'}</td><td><span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${statusClasses[g.status]}`}>{labels[g.status]}</span>{!!g.issues.length&&<details className="mt-2 min-w-28 text-xs"><summary>{g.issues.length} note(s)</summary><ul className="mt-1 list-disc pl-3">{g.issues.map((s,i)=><li key={i}>{s}</li>)}</ul></details>}</td><td className="whitespace-nowrap">{(tab==='register'||g.status==='ready')&&<Button variant="ghost" onClick={()=>show(g)}><FileText size={15}/> Preview</Button>}{tab==='register'&&<Button asChild variant="outline"><a href={url('pdf',{layout:printLayout,qr:printQR?'1':'0',keys:g.key})}><Download size={15}/> PDF</a></Button>}{tab==='register'&&<a className="ml-2 text-xs underline" href={url('details',{key:g.key})} target="_blank" rel="noreferrer">Details</a>}</td></tr>)}{!shown.length&&<tr><td colSpan={6} className="text-center text-slate-600">{busy?'Loading receipts…':error&&tab==='register'?'Register unavailable. Select LR Register to retry.':!records.length&&tab==='register'?(isAdmin?'No issued receipts yet. Import a workbook to get started.':'No LRs in your assigned workspaces.'):'No matching receipts.'}</td></tr>}</tbody></table></div></section>}
  </main></div></div><dialog ref={dialog} onClose={()=>setPreview(null)} className="m-auto w-[min(95vw,1100px)] rounded-2xl bg-white p-0 shadow-xl backdrop:bg-black/50">{preview&&<><div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3"><h2 className="font-bold">LR preview · {preview.name}</h2><Button variant="ghost" aria-label="Close preview" onClick={()=>dialog.current?.close()}><X size={20}/></Button></div><iframe title={`LR preview ${preview.name}`} src={preview.url} className="h-[72vh] w-full" sandbox="allow-same-origin"/></>}</dialog></>;
 }
