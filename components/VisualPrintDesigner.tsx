@@ -122,7 +122,7 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
  };
  const preview=(pdf=false)=>{
   if(!current||!sampleKey){setError('Issue an LR first so the renderer has real data for the proof.');return;}
-  if(dirty&&!published){setError('Save your draft before opening a full-size proof.');return;}
+  if(dirty){setError('Save your draft before opening a full-size proof.');return;}
   const params={layout:`visual:${activeId}`,keys:sampleKey,qr:'1',template_draft:'1'};
   window.open(url(pdf?'pdf':'preview',params),'_blank','noopener,noreferrer');
  };
