@@ -75,16 +75,40 @@ function lrAuthFingerprint(array $auth): string {
 }
 function lrSignedIn(array $auth): bool {
     $now=time();
-    if (!isset($_SESSION['lr_auth']) || !is_array($_SESSION['lr_auth'])) return false;
-    $session=$_SESSION['lr_auth'];
-    if (($session['user']??null)!==$auth['username']
-        || !hash_equals((string)($session['fingerprint']??''),lrAuthFingerprint($auth))
-        || $now-(int)($session['last']??0)>8*3600
-        || $now-(int)($session['since']??0)>24*3600) {
-        unset($_SESSION['lr_auth'],$_SESSION['lr_csrf']);return false;
-    }
+    $session=$_SESSION['lr_auth']??null;
+    if(!is_array($session))return false;
+    $last=(int)($session['last']??0);$since=(int)($session['since']??0);
+    $valid=($last>0 && $since>0 && $now-$last<=8*3600 && $now-$since<=24*3600);
+    if($valid && ($session['role']??'admin')==='admin'){
+        // Preserve sessions issued by the original one-admin authentication system.
+        $valid=($session['user']??null)===$auth['username']
+            && hash_equals((string)($session['fingerprint']??''),lrAuthFingerprint($auth));
+    } elseif($valid && ($session['role']??null)==='download'){
+        $user=lrManagedUser((string)($session['user']??''));
+        $hash=is_array($user)?($user['password_hash']??null):null;
+        $valid=is_array($user) && ($user['enabled']??false)===true
+            && ($user['role']??null)==='download' && is_string($hash)
+            && hash_equals((string)($session['fingerprint']??''),hash('sha256',$hash));
+    } else $valid=false;
+    if(!$valid){unset($_SESSION['lr_auth'],$_SESSION['lr_csrf']);return false;}
     $_SESSION['lr_auth']['last']=$now;
     return true;
+}
+function lrCurrentRole(): string {
+    return ($_SESSION['lr_auth']['role']??'admin')==='download'?'download':'admin';
+}
+function lrCurrentWorkspaces(): array {
+    if(lrCurrentRole()==='admin')return [];
+    $user=lrManagedUser((string)($_SESSION['lr_auth']['user']??''));
+    if(!is_array($user)||($user['enabled']??false)!==true)return [];
+    $ids=$user['workspaces']??[];
+    return is_array($ids)?$ids:[];
+}
+function lrWorkspaceAllowed(string $workspaceId): bool {
+    return lrCurrentRole()==='admin'||in_array($workspaceId,lrCurrentWorkspaces(),true);
+}
+function lrRequireAdmin(): void {
+    if(lrCurrentRole()!=='admin')respond(['error'=>'Administrator access required.'],403);
 }
 function lrCsrf(): string {
     if (empty($_SESSION['lr_csrf'])) $_SESSION['lr_csrf']=bin2hex(random_bytes(32));
@@ -144,41 +168,57 @@ function lrHealth(array $auth): never {
 }
 function lrAuthenticate(string $action,string $method): void {
     $auth=lrCredentials();
-    if ($action==='health' && $method==='GET') lrHealth($auth??[]);
-    if (!lrCredentialsValid($auth)) respond(['error'=>'Configure private storage/auth.json before using FreightSlip.'],503);
+    if($action==='health' && $method==='GET')lrHealth($auth??[]);
+    if(!lrCredentialsValid($auth))respond(['error'=>'Configure private storage/auth.json before using FreightSlip.'],503);
     lrSession();
-    if ($action==='session' && $method==='GET') {
-        if (!lrSignedIn($auth)) respond(['authenticated'=>false,'error'=>'Sign in to FreightSlip.'],401);
-        respond(['authenticated'=>true,'username'=>$auth['username'],'csrf'=>lrCsrf()]);
+    if($action==='session' && $method==='GET'){
+        if(!lrSignedIn($auth))respond(['authenticated'=>false,'error'=>'Sign in to FreightSlip.'],401);
+        respond(['authenticated'=>true,'username'=>$_SESSION['lr_auth']['user'],
+            'role'=>lrCurrentRole(),'workspaces'=>lrCurrentWorkspaces(),'csrf'=>lrCsrf()]);
     }
-    if ($action==='login' && $method==='POST') {
-        if (($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1') respond(['error'=>'Use the FreightSlip sign-in screen.'],403);
+    if($action==='login' && $method==='POST'){
+        if(($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1')respond(['error'=>'Use the FreightSlip sign-in screen.'],403);
         lrSafeOrigin();
-        $data=payload();
-        $user=$data['username']??null;$pass=$data['password']??null;
-        if (!is_string($user) || !is_string($pass) || strlen($user)>64 || strlen($pass)>4096)
+        $data=payload();$name=$data['username']??null;$pass=$data['password']??null;
+        if(!is_string($name)||!is_string($pass)||strlen($name)>64||strlen($pass)>4096)
             respond(['error'=>'Invalid username or password.'],401);
-        if (lrLoginThrottle($user)) respond(['error'=>'Too many attempts. Try again in 15 minutes.'],429);
-        $correct=lrVerifyPassword($auth,$pass);
-        if (!hash_equals($auth['username'],$user) || !$correct) {
-            lrLoginThrottle($user,true);
+        if(lrLoginThrottle($name))respond(['error'=>'Too many attempts. Try again in 15 minutes.'],429);
+        $isAdmin=hash_equals($auth['username'],$name);
+        $account=$isAdmin?null:lrManagedUser($name);
+        $valid=$isAdmin?lrVerifyPassword($auth,$pass):
+            (is_array($account) && ($account['enabled']??false)===true
+             && ($account['role']??null)==='download'
+             && is_string($account['password_hash']??null)
+             && password_verify($pass,$account['password_hash']));
+        if(!$valid){
+            lrLoginThrottle($name,true);
             respond(['error'=>'Incorrect username or password.'],401);
         }
+        $role=$isAdmin?'admin':'download';
+        $username=$isAdmin?$auth['username']:$account['username'];
+        $fingerprint=$isAdmin?lrAuthFingerprint($auth):hash('sha256',$account['password_hash']);
         session_regenerate_id(true);
-        $_SESSION['lr_auth']=['user'=>$auth['username'],'fingerprint'=>lrAuthFingerprint($auth),
+        $_SESSION['lr_auth']=['user'=>$username,'role'=>$role,'fingerprint'=>$fingerprint,
             'since'=>time(),'last'=>time()];
         unset($_SESSION['lr_csrf']);
-        lrLoginThrottle($user,false);
-        respond(['authenticated'=>true,'username'=>$auth['username'],'csrf'=>lrCsrf()]);
+        lrLoginThrottle($name,false);
+        respond(['authenticated'=>true,'username'=>$username,'role'=>$role,
+            'workspaces'=>$isAdmin?[]:$account['workspaces'],'csrf'=>lrCsrf()]);
     }
-    if (!lrSignedIn($auth)) respond(['authenticated'=>false,'error'=>'Your session has expired. Sign in again.'],401);
-    if ($method==='POST') {
-        if (($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1') respond(['error'=>'Submit requests through FreightSlip.'],403);
+    if(!lrSignedIn($auth))
+        respond(['authenticated'=>false,'error'=>'Your session has expired. Sign in again.'],401);
+    if($method==='POST'){
+        if(($_SERVER['HTTP_X_LR_STUDIO']??'')!=='1')
+            respond(['error'=>'Submit requests through FreightSlip.'],403);
         lrSafeOrigin();lrCheckCsrf();
     }
-    if ($action==='logout' && $method==='POST') {
+    if($action==='logout' && $method==='POST'){
         lrClearSession();respond(['signedOut'=>true]);
     }
-    // Release the session file lock during XLSX import, PDF rendering and AI suggestions.
+    // Fail closed. Hiding admin menu items in React is not an access check.
+    if(lrCurrentRole()==='download'
+       && !($method==='GET' && in_array($action,['register','preview','pdf','details'],true)))
+        respond(['error'=>'This account can only view and download assigned LRs.'],403);
+    // Let long PDF renders/imports proceed without holding the user session lock.
     session_write_close();
 }
