@@ -225,6 +225,7 @@ with tempfile.TemporaryDirectory() as db:
             pages=PdfReader(BytesIO(real_pdf.content)).pages
             assert len(pages)==1
             classic_text=' '.join(page.extract_text() for page in pages)
+            print(repr(classic_text[:600]),flush=True)
             assert 'K.G./Ltr.' in classic_text
             assert '48 L' in classic_text and 'NANO UREA' in classic_text
 
