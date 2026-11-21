@@ -223,7 +223,7 @@ function lrAuthenticate(string $action,string $method): void {
     }
     // Fail closed. Hiding admin menu items in React is not an access check.
     if(lrCurrentRole()==='download'
-       && !($method==='GET' && in_array($action,['register','preview','pdf','details'],true)))
+       && !($method==='GET' && in_array($action,['register','preview','pdf','details','visual_public'],true)))
         respond(['error'=>'This account can only view and download assigned LRs.'],403);
     // Let long PDF renders/imports proceed without holding the user session lock.
     session_write_close();
