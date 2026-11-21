@@ -10,10 +10,10 @@ export function url(action:string,params:Record<string,string>={}){
  return `${endpoint}?${new URLSearchParams({action,...params})}`;
 }
 export function clearAuth(){csrf='';}
-export async function api<T>(action:string,body?:object):Promise<T>{
+export async function api<T>(action:string,body?:object,query:Record<string,string>={}):Promise<T>{
  const isPost=body!==undefined;
  const upload=body instanceof FormData;
- const r=await fetch(url(action),{
+ const r=await fetch(url(action,query),{
   credentials:'same-origin',cache:'no-store',
   ...(isPost?{method:'POST',headers:{'X-LR-Studio':'1',
    ...(csrf&&action!=='login'?{'X-LR-CSRF':csrf}:{}),

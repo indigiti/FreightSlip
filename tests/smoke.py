@@ -130,6 +130,19 @@ with tempfile.TemporaryDirectory() as db:
         issued=client.get(base,params={'action':'preview','keys':g[0]['key']},timeout=2)
         assert issued.ok and 'DRAFT · NOT ISSUED' not in issued.text and '370.00' in issued.text
         assert len(client.get(base,timeout=2).json()['groups'])==2
+        # Visual WYSIWYG: editor sample and printed draft must use the SAME
+        # saved LR values. No silent truncation to illustrative text.
+        sample_response=client.get(base,params={'action':'visual_sample','key':g[0]['key']},timeout=7)
+        assert sample_response.ok,sample_response.text
+        sample_json=sample_response.json()
+        assert sample_json['id']==g[0]['id'] and sample_json['key']==g[0]['key']
+        assert sample_json['values']['lr_no']==g[0]['id']
+        assert sample_json['values']['consignee']==g[0]['common']['consignee']
+        assert sample_json['values']['transport_address']==g[0]['common']['address']
+        assert sample_json['values']['consignor_address']==g[0]['common']['consignor_address']
+        assert sample_json['values']['date']=='20-04-2026'
+        assert sample_json['qr_mode'] in ('offline','link','unavailable')
+        assert client.get(base,params={'action':'visual_sample','key':'nonexistent'},timeout=2).status_code==404
         # Editing office settings must not rewrite already-issued LR snapshots.
         revised=client.post(base,params={'action':'settings'},headers=hdr,json={
             'version':1,'settings':dict(initial['settings'],carrier='ANOTHER TRANSPORTER')
@@ -332,6 +345,7 @@ with tempfile.TemporaryDirectory() as db:
         assert downloader.get(base,params={'action':'settings'},timeout=2).status_code==403
         assert downloader.get(base,params={'action':'print_design'},timeout=2).status_code==403
         assert downloader.get(base,params={'action':'visual_templates'},timeout=2).status_code==403
+        assert downloader.get(base,params={'action':'visual_sample','key':g[0]['key']},timeout=2).status_code==403
         assert downloader.get(base,params={'action':'visual_public'},timeout=2).json()['templates'][0]['id']==template_id
         for protected in ['visual_create','visual_save','visual_publish','visual_revert','visual_delete']:
             assert downloader.post(base,params={'action':protected},

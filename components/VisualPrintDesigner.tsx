@@ -17,6 +17,7 @@ type VisualTemplate={id:string;name:string;base:'classic'|'clean';draft:VisualLa
  history:{version:number;name:string;elements:VisualLayer[];published_at:string}[]};
 type Library={revision:number;templates:VisualTemplate[]};
 type Validation={errors:string[];warnings:string[]};
+type VisualSample={key:string;id:string;values:Record<string,string>;qr_png:string|null;qr_mode:string};
 const W=595.27,H=410;
 const bindings:[string,string][]=[
  ['carrier','Transport name'],['transport_address','Transport address'],['lr_no','LR number'],
@@ -28,7 +29,7 @@ const bindings:[string,string][]=[
  ['charge_delivery','Delivery'],['charge_risk','Risk'],['continuation','Continuation'],
  ['signature_name','Signatory'],['draft_stamp','Draft mark']
 ];
-const sample:Record<string,string>={carrier:'SHRIRAM TRANSPORT',transport_address:'MILKAT 2345, Pune Saswad Road, Uruli Devachi',
+const fallbackSample:Record<string,string>={carrier:'SHRIRAM TRANSPORT',transport_address:'MILKAT 2345, Pune Saswad Road, Uruli Devachi',
  lr_no:'LR-2026-00125',date:'21-11-2026',consignor:'SHRIRAM ENTERPRISES',consignor_address:'C/O Shriram Enterprises\nUrulidevachi, Pune 412308',
  consignee:'Example Customer Pvt Ltd',destination:'Pune, Maharashtra',product:'Packaging Material\nMachine Spare Parts',qty:'12\n4',ref_no:'REF-108\nREF-109',weight:'340',
  declared_value:'15,000.00',base_freight:'2,000.00',total_freight:'2,150.00',charge_bc:'100.00',charge_hamali:'50.00',
@@ -60,7 +61,7 @@ function Tool({icon:Icon,label,onClick,disabled=false,active=false}:{icon:typeof
   <Icon size={16} aria-hidden="true"/>
  </button>;
 }
-export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;onPublished?:(list:{id:string;name:string;version:number}[])=>void}){
+export function VisualPrintDesigner({sampleKey,samples=[],onPublished}:{sampleKey?:string;samples?:{key:string;id:string}[];onPublished?:(list:{id:string;name:string;version:number}[])=>void}){
  const [library,setLibrary]=useState<Library>({revision:0,templates:[]});
  const [activeId,setActiveId]=useState('');
  const [layers,setLayers]=useState<VisualLayer[]>([]);
@@ -72,6 +73,17 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
  const [base,setBase]=useState<'classic'|'clean'>('clean'),[newName,setNewName]=useState('My LR Design');
  const [undo,setUndo]=useState<VisualLayer[][]>([]),[redo,setRedo]=useState<VisualLayer[][]>([]);
  const [dirty,setDirty]=useState(false);
+ const [selectedSample,setSelectedSample]=useState(sampleKey??'');
+ const [liveSample,setLiveSample]=useState<VisualSample|null>(null);
+ const [sampleError,setSampleError]=useState('');
+ useEffect(()=>{
+  if(!selectedSample){setLiveSample(null);setSampleError('');return;}
+  let live=true;setLiveSample(null);setSampleError('');
+  api<VisualSample>('visual_sample',undefined,{key:selectedSample})
+   .then(v=>{if(live)setLiveSample(v);})
+   .catch(e=>{if(live)setSampleError(e instanceof Error?e.message:'Unable to load LR values.');});
+  return()=>{live=false;};
+ },[selectedSample]);
  const canvas=useRef<SVGSVGElement|null>(null);
  const drag=useRef<{id:string;startX:number;startY:number;initial:VisualLayer;before:VisualLayer[];mode:'move'|'resize'}|null>(null);
  const current=library.templates.find(t=>t.id===activeId);
@@ -121,9 +133,10 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
   const saved=await mutate('visual_delete',{id:activeId});if(saved)setNote('Draft deleted.');
  };
  const preview=(pdf=false)=>{
-  if(!current||!sampleKey){setError('Issue an LR first so the renderer has real data for the proof.');return;}
+  if(!current||!selectedSample){setError('Select an issued LR for an accurate preview.');return;}
+  if(!liveSample||liveSample.key!==selectedSample){setError('The selected LR must finish loading before previewing.');return;}
   if(dirty){setError('Save your draft before opening a full-size proof.');return;}
-  const params={layout:`visual:${activeId}`,keys:sampleKey,qr:'1',template_draft:'1'};
+  const params={layout:`visual:${activeId}`,keys:selectedSample,qr:'1',template_draft:'1'};
   window.open(url(pdf?'pdf':'preview',params),'_blank','noopener,noreferrer');
  };
  const selectedCoord=(clientX:number,clientY:number)=>{const rect=canvas.current?.getBoundingClientRect();
@@ -165,7 +178,14 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
   const reader=new FileReader();reader.onload=()=>{const data=reader.result;if(typeof data==='string')addImage(data);};reader.readAsDataURL(f);
  }
  function addImage(data:string){const elem=blank('image',{data,w:100,h:50});commit([...layers,elem]);setSelected(elem.id);}
- function displayedText(l:VisualLayer){return l.kind==='field'?sample[l.binding]||l.binding:l.text;}
+ function displayedText(l:VisualLayer){return l.kind==='field'?(liveSample?.values[l.binding]??fallbackSample[l.binding]??''):l.text;}
+ // Unicode-aware fitted size mirrors the server's bounded print text rule.
+ function fittedSize(l:VisualLayer,value:string){
+  const lines=value.split('\n'),longest=Math.max(1,...lines.map(line=>Array.from(line).length));
+  return Math.min(l.size,l.w/longest*1.28,l.h/Math.max(1,lines.length)/1.22);
+ }
+ const resizedFields=layers.filter(l=>(l.kind==='field'||l.kind==='text')&&displayedText(l)!==''
+  &&fittedSize(l,displayedText(l))<l.size-.15);
  return <section className="space-y-4" aria-label="Full LR Visual Print Designer" tabIndex={0} onKeyDown={keyboard}>
   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
    <div className="flex flex-wrap items-center justify-between gap-3">
@@ -215,7 +235,23 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
       onClick={()=>setSelected(layer.id)}><Grip size={13} className="shrink-0 opacity-40"/><span className="truncate">{layerName(layer)}</span></button>)}</div>
     </aside>
     <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-100 p-3 sm:p-5">
-     <p className="mb-3 text-center text-xs text-slate-500">Editable LR half · drag fields or resize the selected outline. Use Shift + arrows for 10 pt movement.</p>
+     <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2">
+      <label className="flex flex-wrap items-center gap-2 text-xs font-semibold text-violet-900">
+       Preview LR data
+       <select value={selectedSample} onChange={e=>setSelectedSample(e.target.value)}
+        className="max-w-[230px] rounded-md border border-violet-200 bg-white px-2 py-1.5 text-xs">
+        <option value="">Example data only</option>
+        {samples.map(x=><option key={x.key} value={x.key}>{x.id}</option>)}
+       </select>
+      </label>
+      <span className="text-xs text-violet-800">{liveSample?`Using real LR ${liveSample.id} · same data as print preview`:selectedSample?'Loading issued LR data…':'Choose an issued LR to match print preview.'}</span>
+     </div>
+     {sampleError&&<p role="alert" className="mb-2 text-xs text-red-700">{sampleError}</p>}
+     {resizedFields.length>0&&<p role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+      {resizedFields.length} text {resizedFields.length===1?'layer is':'layers are'} automatically reduced in the print renderer to fit this LR. Increase the box size or lower font size before publishing.
+      {selection&&(selection.kind==='field'||selection.kind==='text')&&displayedText(selection)!==''?` Selected: ${fittedSize(selection,displayedText(selection)).toFixed(1)}pt rendered / ${selection.size}pt requested.`:''}
+     </p>}
+     <p className="mb-3 text-center text-xs text-slate-500">Drag fields; resizing and HTML wrapping now follow the printed positions. Use Shift + arrows for 10 pt movement.</p>
      <div className="mx-auto overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2" style={{maxWidth:'100%'}}>
       <svg ref={canvas} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Visual layout of the upper LR on an A4 sheet" xmlns="http://www.w3.org/2000/svg"
        style={{display:'block',width:`${maxZoom}%`,minWidth:maxZoom>100?595:undefined,margin:'auto',background:'white',touchAction:'none'}}
@@ -230,15 +266,24 @@ export function VisualPrintDesigner({sampleKey,onPublished}:{sampleKey?:string;o
          {layer.kind==='rect'?<rect x={layer.x} y={layer.y} width={layer.w} height={layer.h} fill={layer.fill} stroke={layer.stroke} strokeWidth={layer.strokeWidth}/>:
           layer.kind==='line'?<line x1={layer.x} y1={layer.y} x2={layer.x+layer.w} y2={layer.y+layer.h} stroke={layer.stroke} strokeWidth={layer.strokeWidth}/>:
           layer.kind==='image'?<image href={layer.data} x={layer.x} y={layer.y} width={layer.w} height={layer.h} preserveAspectRatio="xMidYMid meet"/>:
+          layer.kind==='qr'&&liveSample?
+           (liveSample.qr_png?<image href={`data:image/png;base64,${liveSample.qr_png}`} x={layer.x} y={layer.y} width={layer.w} height={layer.h} preserveAspectRatio="none"/>:
+            <g><rect x={layer.x} y={layer.y} width={layer.w} height={layer.h} fill="#fff7ed" stroke="#b45309"/>
+             <text x={layer.x+layer.w/2} y={layer.y+layer.h/2} textAnchor="middle" fontSize="7" fill="#92400e">QR unavailable</text></g>):
           layer.kind==='qr'?<g><rect x={layer.x} y={layer.y} width={layer.w} height={layer.h} fill="white" stroke="#444" strokeWidth="1"/>
            {[0,1,2].map(n=><rect key={n} x={layer.x+5+(n===1?layer.w-30:0)} y={layer.y+5+(n===2?layer.h-30:0)} width="20" height="20" fill="white" stroke="#111" strokeWidth="3"/>)}
-           <text x={layer.x+layer.w/2} y={layer.y+layer.h-6} textAnchor="middle" fontSize="6">QR PLACEHOLDER</text></g>:
-          <text x={layer.x+(layer.align==='center'?layer.w/2:layer.align==='right'?layer.w:0)} y={layer.y+layer.size}
-           textAnchor={layer.align==='center'?'middle':layer.align==='right'?'end':'start'}
-           fontFamily={layer.font==='serif'?'Georgia,serif':layer.font==='mono'?'monospace':'Arial,sans-serif'} fontSize={layer.size}
-           fontWeight={layer.bold?'bold':'normal'} fontStyle={layer.italic?'italic':'normal'} textDecoration={layer.underline?'underline':'none'} fill={layer.color}>
-           {(displayedText(layer)||' ').split('\n').slice(0,5).map((line,i)=><tspan key={i} x={layer.x+(layer.align==='center'?layer.w/2:layer.align==='right'?layer.w:0)} dy={i===0?0:layer.size*1.2}>{line.length>38?line.slice(0,38)+'…':line}</tspan>)}
-          </text>}
+           <text x={layer.x+layer.w/2} y={layer.y+layer.h-6} textAnchor="middle" fontSize="6">Example QR</text></g>:
+          <foreignObject x={layer.x} y={layer.y} width={layer.w} height={layer.h} style={{overflow:'visible',pointerEvents:'none'}}>
+           <div style={{
+            boxSizing:'border-box',width:'100%',height:'100%',margin:0,padding:0,
+            fontFamily:layer.font==='serif'?'"DejaVu Serif",Georgia,serif':
+              layer.font==='mono'?'"DejaVu Sans Mono",monospace':'"DejaVu Sans",Arial,sans-serif',
+            fontSize:`${Math.round(fittedSize(layer,displayedText(layer))*100)/100}px`,
+            fontWeight:layer.bold?'bold':'normal',fontStyle:layer.italic?'italic':'normal',
+            textDecoration:layer.underline?'underline':'none',textAlign:layer.align,
+            color:layer.color,lineHeight:1.16,whiteSpace:'pre-wrap',overflowWrap:'break-word',overflow:'visible'
+           }}>{displayedText(layer)}</div>
+          </foreignObject>}
          <rect x={layer.x} y={layer.y} width={Math.max(3,layer.w)} height={Math.max(3,layer.h)} fill="transparent" stroke={sel?'#6943ee':'transparent'} strokeWidth={sel?1.4:0} strokeDasharray="3 2"/>
          {sel&&<rect x={layer.x+layer.w-5} y={layer.y+layer.h-5} width="10" height="10" fill="#fff" stroke="#6943ee" strokeWidth="2" cursor="nwse-resize" onPointerDown={e=>begin(e,layer,'resize')}/>}
         </g>;
