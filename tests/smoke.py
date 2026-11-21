@@ -288,8 +288,8 @@ with tempfile.TemporaryDirectory() as db:
             page=pages[0]
             classic_text=page.extract_text()
             assert 'K.G./Ltr.' in classic_text
-            print('CLASSIC PDF EXTRACT:',repr(classic_text[:1100]),flush=True)
-            assert '48 L' in classic_text and 'NANO UREA' in classic_text
+            assert '48 L' in classic_text
+            assert 'NANO\nUREA' in classic_text  # 53pt bottom field wraps as before
             assert abs(float(page.mediabox.width)-595.28)<1 and abs(float(page.mediabox.height)-841.89)<1
             assert all(gp['id'] in page.extract_text() for gp in g[:2])
             clean_pdf=client.get(base,params={'action':'pdf',**clean_params},timeout=30)
